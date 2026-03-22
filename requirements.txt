@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+motor
+pydantic[email]
+pydantic-settings
+pyjwt
+cryptography
+httpx
+faker
