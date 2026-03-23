@@ -1,10 +1,20 @@
-from fastapi import Depends, HTTPException, status
-from app.core.security import verify_token
+from fastapi import Depends, HTTPException, status, Request
+from app.core.security import verify_token, verify_token_from_cookie
 from app.db.mongodb import db_client
 from app.schemas.user import UserInDB, RoleEnum
 from app.services.user_service import is_token_blacklisted
 
-async def get_current_user(token_payload: dict = Depends(verify_token)) -> UserInDB:
+async def get_current_user(request: Request, token_payload: dict | None = Depends(verify_token)) -> UserInDB:
+    # Try Authorization header first; if not present, attempt cookie-based session
+    if token_payload is None:
+        try:
+            token_payload = verify_token_from_cookie(request)
+        except HTTPException:
+            token_payload = None
+
+    if not token_payload:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid token")
+
     raw_token = token_payload.get("_raw_token")
     if raw_token and await is_token_blacklisted(raw_token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been logged out")

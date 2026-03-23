@@ -7,3 +7,5 @@ pyjwt
 cryptography
 httpx
 faker
+python-multipart
+firebase-admin

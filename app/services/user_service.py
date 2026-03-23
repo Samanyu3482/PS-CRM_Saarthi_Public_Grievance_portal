@@ -22,6 +22,14 @@ async def get_user_by_auth0_id(auth0_id: str) -> UserInDB | None:
         return UserInDB(**user)
     return None
 
+async def get_user_by_email(email: str) -> UserInDB | None:
+    user = await db_client.db["users"].find_one({"email": email})
+    if user:
+        if "_id" in user:
+            user["_id"] = str(user["_id"])
+        return UserInDB(**user)
+    return None
+
 async def blacklist_token(token: str):
     hashed_token = hashlib.sha256(token.encode()).hexdigest()
     await db_client.db["blacklisted_tokens"].insert_one({"hashed_token": hashed_token})
