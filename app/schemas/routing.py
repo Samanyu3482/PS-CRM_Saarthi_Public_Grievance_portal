@@ -3,7 +3,9 @@ from typing import Optional
 
 class DepartmentSchema(BaseModel):
     id: str = Field(alias="_id")
-    name: str
+    ministry: str
+    department: str
+    sub_departments: list[str] = []
 
     class Config:
         populate_by_name = True
@@ -13,7 +15,9 @@ class OfficerSchema(BaseModel):
     name: str
     email: EmailStr
     phone: str
+    ministry: str
     department: str
+    sub_department: Optional[str] = None
     city: str
     state: str
     employee_id: str

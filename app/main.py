@@ -34,7 +34,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.api.routes import auth, complaints, routing, dashboard_routes, analytics_routes
+from app.api.routes import auth, complaints, routing, dashboard_routes, analytics_routes, notifications
 app.include_router(auth.router)
 app.include_router(complaints.router)
 app.include_router(routing.router)
@@ -42,6 +42,7 @@ app.include_router(dashboard_routes.router)
 app.include_router(analytics_routes.router)
 from app.api.routes.uploads import router as uploads_router
 app.include_router(uploads_router)
+app.include_router(notifications.router)
 
 # serve uploaded files
 basedir = pathlib.Path(__file__).resolve().parents[1]
