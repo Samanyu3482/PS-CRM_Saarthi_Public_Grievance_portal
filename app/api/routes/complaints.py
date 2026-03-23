@@ -26,6 +26,18 @@ async def get_my_complaints(
     """
     return await complaint_service.get_user_complaints(current_user.auth0_id)
 
+@router.get("/assigned", response_model=List[ComplaintInDB])
+async def get_assigned_complaints(
+    current_user: UserInDB = Depends(RoleChecker([RoleEnum.officer])),
+    skip: int = 0,
+    limit: int = 50
+):
+    """
+    Get all complaints assigned to the logged-in officer.
+    """
+    return await complaint_service.get_assigned_complaints(current_user.auth0_id, skip=skip, limit=limit)
+
+
 @router.get("/{complaint_id}", response_model=ComplaintInDB)
 async def get_complaint(
     complaint_id: str,
@@ -60,4 +72,48 @@ async def update_complaint_status(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Complaint not found")
         
     updated = await complaint_service.update_complaint(complaint_id, update_data)
+    return updated
+
+from pydantic import BaseModel
+class FeedbackCreate(BaseModel):
+    rating: int
+    comment: str | None = None
+
+@router.post("/{complaint_id}/feedback", response_model=ComplaintInDB)
+async def submit_feedback(
+    complaint_id: str,
+    feedback_in: FeedbackCreate,
+    current_user: UserInDB = Depends(RoleChecker([RoleEnum.citizen]))
+):
+    """
+    Submit feedback/rating for a resolved complaint. Only accessible by Citizens.
+    """
+    complaint = await complaint_service.get_complaint_by_id(complaint_id)
+    if not complaint or complaint.created_by != current_user.auth0_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Complaint not found or not authorized")
+        
+    updated = await complaint_service.add_feedback(complaint_id, feedback_in.rating, feedback_in.comment)
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to add feedback")
+    return updated
+
+class NoteCreate(BaseModel):
+    text: str
+
+@router.post("/{complaint_id}/notes", response_model=ComplaintInDB)
+async def add_note(
+    complaint_id: str,
+    note_in: NoteCreate,
+    current_user: UserInDB = Depends(RoleChecker([RoleEnum.officer, RoleEnum.ministry]))
+):
+    """
+    Add an internal note to a complaint. Only accessible by Officers and Ministry.
+    """
+    complaint = await complaint_service.get_complaint_by_id(complaint_id)
+    if not complaint:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Complaint not found")
+        
+    updated = await complaint_service.add_note(complaint_id, current_user.auth0_id, note_in.text)
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to add note")
     return updated

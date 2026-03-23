@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, conint
 from typing import Optional, List
 from datetime import datetime, timezone
 from enum import Enum
@@ -28,6 +28,16 @@ class Location(BaseModel):
     pincode: str
     coordinates: Optional[Coordinates] = None
 
+class Feedback(BaseModel):
+    rating: conint(ge=1, le=5) # type: ignore
+    comment: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class Note(BaseModel):
+    user_id: str
+    text: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
 class ComplaintCreate(BaseModel):
     title: str
     description: str
@@ -48,6 +58,8 @@ class ComplaintUpdate(BaseModel):
     category: Optional[str] = None
     sentiment_score: Optional[float] = None
     sla_deadline: Optional[datetime] = None
+    feedback: Optional[Feedback] = None
+    notes: Optional[List[Note]] = None
 
 class ComplaintInDB(BaseModel):
     id: str = Field(alias="_id")
@@ -64,6 +76,8 @@ class ComplaintInDB(BaseModel):
     duplicate_of: Optional[str] = None
     sentiment_score: Optional[float] = None
     sla_deadline: Optional[datetime] = None
+    feedback: Optional[Feedback] = None
+    notes: List[Note] = []
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Config:

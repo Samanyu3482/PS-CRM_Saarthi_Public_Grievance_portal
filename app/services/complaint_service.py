@@ -1,5 +1,5 @@
 from app.db.mongodb import db_client
-from app.schemas.complaint import ComplaintCreate, ComplaintInDB, ComplaintUpdate, Location, Coordinates
+from app.schemas.complaint import ComplaintCreate, ComplaintInDB, ComplaintUpdate, Location, Coordinates, Feedback, Note
 from app.services import routing_service
 from fastapi.encoders import jsonable_encoder
 from typing import List, Optional
@@ -98,3 +98,41 @@ async def update_complaint(complaint_id: str, update_data: ComplaintUpdate) -> O
     )
     
     return await get_complaint_by_id(complaint_id)
+
+async def add_feedback(complaint_id: str, rating: int, comment: Optional[str]) -> Optional[ComplaintInDB]:
+    from bson import ObjectId
+    try:
+        obj_id = ObjectId(complaint_id)
+    except Exception:
+        return None
+        
+    feedback_data = Feedback(rating=rating, comment=comment).model_dump()
+    await db_client.db["complaints"].update_one(
+        {"_id": obj_id},
+        {"$set": {"feedback": feedback_data}}
+    )
+    return await get_complaint_by_id(complaint_id)
+
+async def add_note(complaint_id: str, user_id: str, text: str) -> Optional[ComplaintInDB]:
+    from bson import ObjectId
+    try:
+        obj_id = ObjectId(complaint_id)
+    except Exception:
+        return None
+        
+    note_data = Note(user_id=user_id, text=text).model_dump()
+    await db_client.db["complaints"].update_one(
+        {"_id": obj_id},
+        {"$push": {"notes": note_data}}
+    )
+    return await get_complaint_by_id(complaint_id)
+
+async def get_assigned_complaints(officer_id: str, skip: int = 0, limit: int = 50) -> List[ComplaintInDB]:
+    cursor = db_client.db["complaints"].find({"assigned_to": officer_id}).sort("created_at", -1).skip(skip).limit(limit)
+    complaints = await cursor.to_list(length=limit)
+    result = []
+    for comp in complaints:
+        if "_id" in comp:
+            comp["_id"] = str(comp["_id"])
+        result.append(ComplaintInDB(**comp))
+    return result
