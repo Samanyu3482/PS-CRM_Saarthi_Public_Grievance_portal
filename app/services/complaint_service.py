@@ -28,8 +28,8 @@ async def create_complaint(complaint_in: ComplaintCreate, user_auth0_id: str) ->
                 detail="Duplicate complaint detected by AI. You have already submitted this specific issue."
             )
 
-    department = routing_service.detect_department(complaint_in.description)
-    officer = await routing_service.assign_officer(department, complaint_in.city)
+    routing_info = routing_service.detect_department(complaint_in.description)
+    officer = await routing_service.assign_officer(routing_info["ministry"], routing_info["department"], complaint_in.city)
     
     assigned_to = str(officer["_id"]) if officer else None
     status = "assigned" if assigned_to else "submitted"
@@ -44,7 +44,9 @@ async def create_complaint(complaint_in: ComplaintCreate, user_auth0_id: str) ->
         "status": status,
         "priority": "medium",
         "assigned_to": assigned_to,
-        "department": department,
+        "ministry": routing_info["ministry"],
+        "department": routing_info["department"],
+        "sub_department": routing_info["sub_department"],
         "duplicate_of": None,
         "sentiment_score": None,
         "sla_deadline": None,

@@ -53,7 +53,9 @@ class ComplaintUpdate(BaseModel):
     status: Optional[ComplaintStatus] = None
     priority: Optional[PriorityEnum] = None
     assigned_to: Optional[str] = None
+    ministry: Optional[str] = None
     department: Optional[str] = None
+    sub_department: Optional[str] = None
     duplicate_of: Optional[str] = None
     category: Optional[str] = None
     sentiment_score: Optional[float] = None
@@ -72,7 +74,9 @@ class ComplaintInDB(BaseModel):
     status: ComplaintStatus = ComplaintStatus.submitted
     priority: PriorityEnum = PriorityEnum.medium
     assigned_to: Optional[str] = None
+    ministry: Optional[str] = None
     department: Optional[str] = None
+    sub_department: Optional[str] = None
     duplicate_of: Optional[str] = None
     sentiment_score: Optional[float] = None
     sla_deadline: Optional[datetime] = None
