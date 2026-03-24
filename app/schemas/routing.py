@@ -7,8 +7,10 @@ class DepartmentSchema(BaseModel):
     department: str
     sub_departments: list[str] = []
 
-    class Config:
-        populate_by_name = True
+    model_config = {
+        "populate_by_name": True,
+        "extra": "allow"
+    }
 
 class OfficerSchema(BaseModel):
     id: str = Field(alias="_id")
@@ -23,5 +25,7 @@ class OfficerSchema(BaseModel):
     employee_id: str
     current_workload: int
 
-    class Config:
-        populate_by_name = True
+    model_config = {
+        "populate_by_name": True,
+        "extra": "allow"
+    }

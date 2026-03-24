@@ -9,7 +9,7 @@ class RoleEnum(str, Enum):
     mp_mla = "mp_mla"
 
 class UserBase(BaseModel):
-    auth0_id: str
+    auth0_id: Optional[str] = None
     name: str
     email: EmailStr
     phone: str
@@ -41,6 +41,11 @@ class MpMla(UserBase):
 
 # Polymorphic validation schema based on 'role'
 UserCreate = Annotated[Union[Citizen, Officer, Ministry, MpMla], Field(discriminator="role")]
+
+class UserSignupRequest(BaseModel):
+    user_data: UserCreate
+    password: Optional[str] = None
+    id_token: Optional[str] = None
 
 class UserInDB(BaseModel):
     id: str = Field(alias="_id")

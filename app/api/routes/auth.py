@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
-from app.schemas.user import UserCreate, UserInDB
+from app.schemas.user import UserCreate, UserInDB, UserSignupRequest
 from app.services import user_service
 from app.api.deps import get_current_user
 from app.core.security import decode_jwt
@@ -10,42 +10,148 @@ import httpx
 import json
 
 
-class TokenBody(BaseModel):
-    token: str
-
-
-class DevLogin(BaseModel):
-    email: str
-    password: str | None = None
-
-
 class FirebaseLogin(BaseModel):
     idToken: str
 
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class TokenBody(BaseModel):
+    token: str
+
+class DevLogin(BaseModel):
+    email: str
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/signup", response_model=UserInDB)
-async def signup(user_in: UserCreate):
-    existing_user = await user_service.get_user_by_auth0_id(user_in.auth0_id)
+async def signup(signup_req: UserSignupRequest):
+    user_data = signup_req.user_data
+    
+    # Check if user already exists in DB
+    existing_user = await user_service.get_user_by_email(user_data.email)
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User already exists"
+            detail="User already exists in our system. Please log in."
         )
-    return await user_service.create_user(user_in)
+    
+    uid = None
+    
+    # Priority 1: Use id_token if provided (Social Login)
+    if signup_req.id_token:
+        lookup_url = f"https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={settings.FIREBASE_API_KEY}"
+        async with httpx.AsyncClient() as client:
+            lookup_res = await client.post(lookup_url, json={"idToken": signup_req.id_token})
+        
+        if lookup_res.status_code == 200:
+            token_data = lookup_res.json()
+            if "users" in token_data and len(token_data["users"]) > 0:
+                uid = token_data["users"][0].get("localId")
+                email = token_data["users"][0].get("email")
+                if email != user_data.email:
+                    raise HTTPException(status_code=400, detail="Token email does not match form email")
+            else:
+                raise HTTPException(status_code=400, detail="Invalid token - user not found")
+        else:
+            raise HTTPException(status_code=lookup_res.status_code, detail="Social token verification failed")
+            
+    # Priority 2: Use password for Email/Password Signup
+    elif signup_req.password:
+        signup_url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={settings.FIREBASE_API_KEY}"
+        async with httpx.AsyncClient() as client:
+            fb_res = await client.post(
+                signup_url,
+                json={
+                    "email": user_data.email,
+                    "password": signup_req.password,
+                    "returnSecureToken": True
+                }
+            )
+        
+        if fb_res.status_code == 200:
+            uid = fb_res.json().get("localId")
+        elif fb_res.status_code == 400:
+            error_msg = fb_res.json().get("error", {}).get("message")
+            if error_msg == "EMAIL_EXISTS":
+                # User exists in Firebase, verify their password to get UID
+                login_url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={settings.FIREBASE_API_KEY}"
+                async with httpx.AsyncClient() as client:
+                    login_res = await client.post(
+                        login_url,
+                        json={
+                            "email": user_data.email,
+                            "password": signup_req.password,
+                            "returnSecureToken": True
+                        }
+                    )
+                if login_res.status_code == 200:
+                    uid = login_res.json().get("localId")
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, 
+                        detail="Account already exists in Firebase but password verification failed."
+                    )
+            else:
+                raise HTTPException(status_code=400, detail=error_msg)
+        else:
+            raise HTTPException(status_code=fb_res.status_code, detail="Firebase communication error")
+    else:
+        raise HTTPException(status_code=400, detail="Either password or id_token must be provided")
+    
+    # 3. Create user in MongoDB
+    user_data.auth0_id = uid
+    return await user_service.create_user(user_data)
 
 @router.get("/me", response_model=UserInDB)
 async def get_my_profile(current_user: UserInDB = Depends(get_current_user)):
     return current_user
 
 @router.post("/login", response_model=UserInDB)
-async def login(current_user: UserInDB = Depends(get_current_user)):
+async def login(body: LoginRequest, response: Response):
     """
-    Since Auth0 handles the credentials, sign in only requires the JWT Bearer token
-    passed in the Authorization header. It dynamically returns the role-specific profile!
+    Unified login endpoint that verifies credentials with Firebase
+    and sets a session cookie.
     """
-    return current_user
+    # 1. Verify credentials with Firebase REST API
+    login_url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={settings.FIREBASE_API_KEY}"
+    async with httpx.AsyncClient() as client:
+        fb_res = await client.post(
+            login_url,
+            json={
+                "email": body.email,
+                "password": body.password,
+                "returnSecureToken": True
+            }
+        )
+    
+    if fb_res.status_code != 200:
+        detail = fb_res.json().get("error", {}).get("message", "Invalid credentials")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail)
+    
+    fb_data = fb_res.json()
+    uid = fb_data.get("localId")
+    
+    # 2. Get user from DB
+    user = await user_service.get_user_by_auth0_id(uid)
+    if not user:
+        # Fallback to email
+        user = await user_service.get_user_by_email(body.email)
+    
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found in system")
+    
+    # 3. Set session cookie
+    response.set_cookie(
+        key="access_token",
+        value=uid,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=3600*24,
+    )
+    return user
 
 
 
