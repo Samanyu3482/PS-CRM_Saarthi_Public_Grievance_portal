@@ -4,12 +4,6 @@ from typing import Optional
 class Settings(BaseSettings):
     PROJECT_NAME: str = "PS-CRM"
     MONGODB_URI: str
-    AUTH0_DOMAIN: str
-    AUTH0_API_AUDIENCE: str
-    AUTH0_ISSUER: str
-    AUTH0_ALGORITHMS: str = "RS256"
-    AUTH0_CLIENT_ID: Optional[str] = None
-    AUTH0_CLIENT_SECRET: str
     GEMINI_API_KEY: str = ""
     FRONTEND_ORIGINS: str = "http://localhost:5173"
     # Firebase Configuration

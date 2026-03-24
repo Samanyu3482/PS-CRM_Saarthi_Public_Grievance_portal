@@ -1,9 +1,9 @@
 from app.db.mongodb import db_client
 from typing import Dict, Any, List, Optional
 
-async def get_citizen_dashboard(auth0_id: str) -> Dict[str, Any]:
+async def get_citizen_dashboard(firebase_uid: str) -> Dict[str, Any]:
     pipeline = [
-        {"$match": {"created_by": auth0_id}},
+        {"$match": {"created_by": firebase_uid}},
         {"$facet": {
             "total": [{"$count": "count"}],
             "pending": [{"$match": {"status": "submitted"}}, {"$count": "count"}],

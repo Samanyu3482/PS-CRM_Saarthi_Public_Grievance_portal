@@ -9,7 +9,7 @@ class RoleEnum(str, Enum):
     mp_mla = "mp_mla"
 
 class UserBase(BaseModel):
-    auth0_id: str
+    firebase_uid: str
     name: str
     email: EmailStr
     phone: str
@@ -44,7 +44,7 @@ UserCreate = Annotated[Union[Citizen, Officer, Ministry, MpMla], Field(discrimin
 
 class UserInDB(BaseModel):
     id: str = Field(alias="_id")
-    auth0_id: str
+    firebase_uid: str
     role: RoleEnum
     name: str
     email: EmailStr

@@ -15,7 +15,7 @@ async def create_complaint(
     """
     Submit a new complaint. Only accessible by Citizens.
     """
-    return await complaint_service.create_complaint(complaint_in, user_auth0_id=current_user.auth0_id)
+    return await complaint_service.create_complaint(complaint_in, user_firebase_uid=current_user.firebase_uid)
 
 @router.get("/my", response_model=List[ComplaintInDB])
 async def get_my_complaints(
@@ -24,7 +24,7 @@ async def get_my_complaints(
     """
     Get all complaints created by the logged-in user.
     """
-    return await complaint_service.get_user_complaints(current_user.auth0_id)
+    return await complaint_service.get_user_complaints(current_user.firebase_uid)
 
 @router.get("/assigned", response_model=List[ComplaintInDB])
 async def get_assigned_complaints(
@@ -35,7 +35,7 @@ async def get_assigned_complaints(
     """
     Get all complaints assigned to the logged-in officer.
     """
-    return await complaint_service.get_assigned_complaints(current_user.auth0_id, skip=skip, limit=limit)
+    return await complaint_service.get_assigned_complaints(current_user.firebase_uid, skip=skip, limit=limit)
 
 
 @router.get("/{complaint_id}", response_model=ComplaintInDB)
@@ -52,7 +52,7 @@ async def get_complaint(
         
     # Security: A citizen can only view their own complaints. 
     # Officers/Ministry/MP_MLA can view any complaint based on requirements.
-    if current_user.role == RoleEnum.citizen and complaint.created_by != current_user.auth0_id:
+    if current_user.role == RoleEnum.citizen and complaint.created_by != current_user.firebase_uid:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view this complaint")
         
     return complaint
@@ -89,7 +89,7 @@ async def submit_feedback(
     Submit feedback/rating for a resolved complaint. Only accessible by Citizens.
     """
     complaint = await complaint_service.get_complaint_by_id(complaint_id)
-    if not complaint or complaint.created_by != current_user.auth0_id:
+    if not complaint or complaint.created_by != current_user.firebase_uid:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Complaint not found or not authorized")
         
     updated = await complaint_service.add_feedback(complaint_id, feedback_in.rating, feedback_in.comment)
@@ -113,7 +113,7 @@ async def add_note(
     if not complaint:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Complaint not found")
         
-    updated = await complaint_service.add_note(complaint_id, current_user.auth0_id, note_in.text)
+    updated = await complaint_service.add_note(complaint_id, current_user.firebase_uid, note_in.text)
     if not updated:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to add note")
     return updated
