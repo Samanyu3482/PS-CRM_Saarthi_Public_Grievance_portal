@@ -14,10 +14,11 @@ async def get_departments():
 
 @router.get("/officers", response_model=List[OfficerSchema])
 async def get_officers(
+    ministry: Optional[str] = Query(None, description="Filter by ministry name"),
     department: Optional[str] = Query(None, description="Filter by department name"),
     city: Optional[str] = Query(None, description="Filter by city")
 ):
     """
-    Get officers, optionally filtered by department and city.
+    Get officers, optionally filtered by ministry, department and city.
     """
-    return await routing_service.get_officers(department, city)
+    return await routing_service.get_officers(ministry, department, city)

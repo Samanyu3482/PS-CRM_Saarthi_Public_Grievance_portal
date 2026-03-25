@@ -38,6 +38,18 @@ async def get_assigned_complaints(
     return await complaint_service.get_assigned_complaints(current_user.firebase_uid, skip=skip, limit=limit)
 
 
+@router.get("/spam", response_model=List[ComplaintInDB])
+async def get_spam_complaints(
+    current_user: UserInDB = Depends(RoleChecker([RoleEnum.officer, RoleEnum.ministry])),
+    skip: int = 0,
+    limit: int = 50
+):
+    """
+    Get all spam-flagged complaints for officer/ministry review.
+    """
+    return await complaint_service.get_flagged_spam_complaints(skip=skip, limit=limit)
+
+
 @router.get("/{complaint_id}", response_model=ComplaintInDB)
 async def get_complaint(
     complaint_id: str,

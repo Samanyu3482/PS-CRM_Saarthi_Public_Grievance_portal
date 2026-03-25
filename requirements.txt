@@ -9,3 +9,6 @@ httpx
 faker
 python-multipart
 firebase-admin
+numpy
+scikit-learn
+sentence-transformers

@@ -3,6 +3,7 @@ from typing import Optional, List
 from datetime import datetime, timezone
 from enum import Enum
 
+
 class ComplaintStatus(str, Enum):
     submitted = "submitted"
     classified = "classified"
@@ -10,6 +11,8 @@ class ComplaintStatus(str, Enum):
     in_progress = "in_progress"
     resolved = "resolved"
     closed = "closed"
+    flagged_spam = "flagged_spam"        # ✅ added
+
 
 class PriorityEnum(str, Enum):
     low = "low"
@@ -17,9 +20,11 @@ class PriorityEnum(str, Enum):
     high = "high"
     critical = "critical"
 
+
 class Coordinates(BaseModel):
     lat: Optional[float] = None
     lng: Optional[float] = None
+
 
 class Location(BaseModel):
     address: str
@@ -28,15 +33,18 @@ class Location(BaseModel):
     pincode: str
     coordinates: Optional[Coordinates] = None
 
+
 class Feedback(BaseModel):
-    rating: conint(ge=1, le=5) # type: ignore
+    rating: conint(ge=1, le=5)  # type: ignore
     comment: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
 
 class Note(BaseModel):
     user_id: str
     text: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
 
 class ComplaintCreate(BaseModel):
     title: str
@@ -48,6 +56,7 @@ class ComplaintCreate(BaseModel):
     lat: Optional[float] = None
     lng: Optional[float] = None
     images: Optional[List[str]] = []
+
 
 class ComplaintUpdate(BaseModel):
     status: Optional[ComplaintStatus] = None
@@ -62,6 +71,10 @@ class ComplaintUpdate(BaseModel):
     sla_deadline: Optional[datetime] = None
     feedback: Optional[Feedback] = None
     notes: Optional[List[Note]] = None
+    is_spam: Optional[bool] = None               # ✅ added — officer can clear false positive
+    spam_matched_on: Optional[List[str]] = None  # ✅ added
+    spam_reason: Optional[str] = None            # ✅ added
+
 
 class ComplaintInDB(BaseModel):
     id: str = Field(alias="_id")
@@ -81,7 +94,11 @@ class ComplaintInDB(BaseModel):
     sentiment_score: Optional[float] = None
     sla_deadline: Optional[datetime] = None
     feedback: Optional[Feedback] = None
+    embedding: Optional[List[float]] = None
     notes: List[Note] = []
+    is_spam: bool = False                        # ✅ added — defaults False so old docs don't break
+    spam_matched_on: List[str] = []              # ✅ added — keywords that triggered spam flag
+    spam_reason: Optional[str] = None            # ✅ added — human-readable reason for officer
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Config:

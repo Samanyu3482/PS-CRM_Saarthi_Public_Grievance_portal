@@ -3,7 +3,7 @@ from fastapi import HTTPException, Security, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.core.config import settings
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 async def decode_firebase_token(token: str) -> dict:
     try:
@@ -30,7 +30,9 @@ async def decode_firebase_token(token: str) -> dict:
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Token Validation Error: {str(e)}")
 
-async def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)):
+async def verify_token(credentials: HTTPAuthorizationCredentials | None = Security(security)):
+    if credentials is None:
+        return None
     token = credentials.credentials
     return await decode_firebase_token(token)
 

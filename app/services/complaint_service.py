@@ -1,38 +1,98 @@
 from app.db.mongodb import db_client
-from app.schemas.complaint import ComplaintCreate, ComplaintInDB, ComplaintUpdate, Location, Coordinates, Feedback, Note
+from app.schemas.complaint import ComplaintCreate, ComplaintInDB, ComplaintUpdate, Feedback, Note
 from app.services import routing_service
-from fastapi.encoders import jsonable_encoder
 from typing import List, Optional
 from datetime import datetime, timezone
 
+
 async def create_complaint(complaint_in: ComplaintCreate, user_firebase_uid: str) -> ComplaintInDB:
+    from app.services.ai_service import get_embedding, check_duplicate_complaint, check_spam
+    from app.services.classification_service import classify_complaint
+    from fastapi import HTTPException, status
+
     location_data = {
         "address": complaint_in.address,
         "city": complaint_in.city,
         "state": complaint_in.state,
         "pincode": complaint_in.pincode,
-        "coordinates": {"lat": complaint_in.lat, "lng": complaint_in.lng} if (complaint_in.lat and complaint_in.lng) else None
+        "coordinates": {
+            "lat": complaint_in.lat,
+            "lng": complaint_in.lng
+        } if (complaint_in.lat is not None and complaint_in.lng is not None) else None
     }
-    
-    # AI Deduplication Check
-    existing_comps = await get_user_complaints(user_firebase_uid)
-    if existing_comps:
-        from app.services.ai_service import check_duplicate_complaint
-        from fastapi import HTTPException, status
-        existing_descs = [c.description for c in existing_comps]
-        # Compare against up to 10 recent complaints to limit Gemini token usage
-        is_duplicate = await check_duplicate_complaint(complaint_in.description, existing_descs[:10])
-        if is_duplicate:
+
+    # ── 1. Spam check (cheapest — runs first, no DB or ML needed) ────────────
+    spam_result = check_spam(complaint_in.title, complaint_in.description)
+
+    if spam_result["is_spam"]:
+        complaint_dict = {
+            "title": complaint_in.title,
+            "description": complaint_in.description,
+            "category": None,
+            "location": location_data,
+            "images": complaint_in.images or [],
+            "created_by": user_firebase_uid,
+            "status": "flagged_spam",
+            "priority": "low",
+            "assigned_to": None,
+            "ministry": None,
+            "department": None,
+            "sub_department": None,
+            "duplicate_of": None,
+            "sentiment_score": None,
+            "sla_deadline": None,
+            "embedding": None,          # not worth indexing spam
+            "notes": [],
+            "feedback": None,
+            "is_spam": True,
+            "spam_matched_on": spam_result["matched_on"],
+            "spam_reason": spam_result["reason"],
+            "created_at": datetime.now(timezone.utc),
+        }
+        insert_result = await db_client.db["complaints"].insert_one(complaint_dict)
+        created = await db_client.db["complaints"].find_one({"_id": insert_result.inserted_id})
+        created["_id"] = str(created["_id"])
+        return ComplaintInDB(**created)
+
+    # ── 2. Embedding (only for clean complaints) ──────────────────────────────
+    new_embedding = get_embedding(complaint_in.description).tolist()
+
+    # ── 3. Deduplication check ────────────────────────────────────────────────
+    existing_raw = await db_client.db["complaints"].find(
+        {"created_by": user_firebase_uid}
+    ).sort("created_at", -1).to_list(length=50)
+
+    if existing_raw:
+        dup_result = await check_duplicate_complaint(
+            new_embedding=new_embedding,
+            new_lat=complaint_in.lat,
+            new_lng=complaint_in.lng,
+            new_time=datetime.now(timezone.utc),
+            existing_complaints=existing_raw,
+        )
+        if dup_result and dup_result["is_duplicate"]:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Duplicate complaint detected by AI. You have already submitted this specific issue."
+                detail=(
+                    "Duplicate complaint detected. A similar complaint was already "
+                    f"submitted (ID: {dup_result['duplicate_of']}). "
+                    "Criteria: text similarity > 80%, location within 20m, within 24h."
+                ),
             )
 
-    routing_info = routing_service.detect_department(complaint_in.description)
-    officer = await routing_service.assign_officer(routing_info["ministry"], routing_info["department"], complaint_in.city)
-    
+    # ── 4. Classification (replaces routing_service.detect_department) ────────
+    routing_info = await classify_complaint(
+        title=complaint_in.title,
+        description=complaint_in.description,
+    )
+
+    # ── 5. Officer assignment ─────────────────────────────────────────────────
+    officer = await routing_service.assign_officer(
+        routing_info["ministry"], routing_info["department"], complaint_in.city
+    )
+
     assigned_to = str(officer["_id"]) if officer else None
-    status = "assigned" if assigned_to else "submitted"
+    complaint_status = "assigned" if assigned_to else "submitted"
 
     complaint_dict = {
         "title": complaint_in.title,
@@ -41,7 +101,7 @@ async def create_complaint(complaint_in: ComplaintCreate, user_firebase_uid: str
         "location": location_data,
         "images": complaint_in.images or [],
         "created_by": user_firebase_uid,
-        "status": status,
+        "status": complaint_status,
         "priority": "medium",
         "assigned_to": assigned_to,
         "ministry": routing_info["ministry"],
@@ -50,25 +110,32 @@ async def create_complaint(complaint_in: ComplaintCreate, user_firebase_uid: str
         "duplicate_of": None,
         "sentiment_score": None,
         "sla_deadline": None,
-        "created_at": datetime.now(timezone.utc)
+        "embedding": new_embedding,
+        "notes": [],
+        "feedback": None,
+        "is_spam": False,
+        "spam_matched_on": [],
+        "spam_reason": None,
+        "created_at": datetime.now(timezone.utc),
     }
-    
-    result = await db_client.db["complaints"].insert_one(complaint_dict)
-    created_complaint = await db_client.db["complaints"].find_one({"_id": result.inserted_id})
-    if created_complaint and "_id" in created_complaint:
-        created_complaint["_id"] = str(created_complaint["_id"])
-        
-    return ComplaintInDB(**created_complaint)
+
+    insert_result = await db_client.db["complaints"].insert_one(complaint_dict)
+    created = await db_client.db["complaints"].find_one({"_id": insert_result.inserted_id})
+    created["_id"] = str(created["_id"])
+    return ComplaintInDB(**created)
+
 
 async def get_user_complaints(user_firebase_uid: str) -> List[ComplaintInDB]:
-    cursor = db_client.db["complaints"].find({"created_by": user_firebase_uid}).sort("created_at", -1)
+    cursor = db_client.db["complaints"].find(
+        {"created_by": user_firebase_uid}
+    ).sort("created_at", -1)
     complaints = await cursor.to_list(length=100)
     result = []
     for comp in complaints:
-        if "_id" in comp:
-            comp["_id"] = str(comp["_id"])
+        comp["_id"] = str(comp["_id"])
         result.append(ComplaintInDB(**comp))
     return result
+
 
 async def get_complaint_by_id(complaint_id: str) -> Optional[ComplaintInDB]:
     from bson import ObjectId
@@ -76,12 +143,12 @@ async def get_complaint_by_id(complaint_id: str) -> Optional[ComplaintInDB]:
         obj_id = ObjectId(complaint_id)
     except Exception:
         return None
-        
     comp = await db_client.db["complaints"].find_one({"_id": obj_id})
     if comp:
         comp["_id"] = str(comp["_id"])
         return ComplaintInDB(**comp)
     return None
+
 
 async def update_complaint(complaint_id: str, update_data: ComplaintUpdate) -> Optional[ComplaintInDB]:
     from bson import ObjectId
@@ -89,17 +156,26 @@ async def update_complaint(complaint_id: str, update_data: ComplaintUpdate) -> O
         obj_id = ObjectId(complaint_id)
     except Exception:
         return None
-        
-    update_dict = {k: v for k, v in update_data.model_dump(exclude_unset=True).items() if v is not None}
+
+    update_dict = {
+        k: v for k, v in update_data.model_dump(exclude_unset=True).items()
+        if v is not None
+    }
+
+    # ── Special case: officer clearing a spam flag ────────────────────────────
+    # is_spam=False is a valid update but gets filtered by "if v is not None"
+    # since False is falsy — handle explicitly
+    if "is_spam" in update_data.model_dump(exclude_unset=True):
+        update_dict["is_spam"] = update_data.is_spam
+
     if not update_dict:
         return await get_complaint_by_id(complaint_id)
-        
+
     await db_client.db["complaints"].update_one(
-        {"_id": obj_id},
-        {"$set": update_dict}
+        {"_id": obj_id}, {"$set": update_dict}
     )
-    
     return await get_complaint_by_id(complaint_id)
+
 
 async def add_feedback(complaint_id: str, rating: int, comment: Optional[str]) -> Optional[ComplaintInDB]:
     from bson import ObjectId
@@ -107,13 +183,12 @@ async def add_feedback(complaint_id: str, rating: int, comment: Optional[str]) -
         obj_id = ObjectId(complaint_id)
     except Exception:
         return None
-        
     feedback_data = Feedback(rating=rating, comment=comment).model_dump()
     await db_client.db["complaints"].update_one(
-        {"_id": obj_id},
-        {"$set": {"feedback": feedback_data}}
+        {"_id": obj_id}, {"$set": {"feedback": feedback_data}}
     )
     return await get_complaint_by_id(complaint_id)
+
 
 async def add_note(complaint_id: str, user_id: str, text: str) -> Optional[ComplaintInDB]:
     from bson import ObjectId
@@ -121,20 +196,33 @@ async def add_note(complaint_id: str, user_id: str, text: str) -> Optional[Compl
         obj_id = ObjectId(complaint_id)
     except Exception:
         return None
-        
     note_data = Note(user_id=user_id, text=text).model_dump()
     await db_client.db["complaints"].update_one(
-        {"_id": obj_id},
-        {"$push": {"notes": note_data}}
+        {"_id": obj_id}, {"$push": {"notes": note_data}}
     )
     return await get_complaint_by_id(complaint_id)
 
+
 async def get_assigned_complaints(officer_id: str, skip: int = 0, limit: int = 50) -> List[ComplaintInDB]:
-    cursor = db_client.db["complaints"].find({"assigned_to": officer_id}).sort("created_at", -1).skip(skip).limit(limit)
+    cursor = db_client.db["complaints"].find(
+        {"assigned_to": officer_id}
+    ).sort("created_at", -1).skip(skip).limit(limit)
     complaints = await cursor.to_list(length=limit)
     result = []
     for comp in complaints:
-        if "_id" in comp:
-            comp["_id"] = str(comp["_id"])
+        comp["_id"] = str(comp["_id"])
+        result.append(ComplaintInDB(**comp))
+    return result
+
+
+async def get_flagged_spam_complaints(skip: int = 0, limit: int = 50) -> List[ComplaintInDB]:
+    """Fetch all spam-flagged complaints for officer review."""
+    cursor = db_client.db["complaints"].find(
+        {"status": "flagged_spam"}
+    ).sort("created_at", -1).skip(skip).limit(limit)
+    complaints = await cursor.to_list(length=limit)
+    result = []
+    for comp in complaints:
+        comp["_id"] = str(comp["_id"])
         result.append(ComplaintInDB(**comp))
     return result

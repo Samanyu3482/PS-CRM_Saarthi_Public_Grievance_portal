@@ -12,15 +12,27 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 async def require_admin(request: Request):
     """Dependency: reads session cookie and verifies user is admin.
-    Supports both auth0_id (Firebase UID) and dev-login token (admin_created_email)."""
+    Supports auth0_id, firebase_uid, email, and _id lookups."""
     token = request.cookies.get("access_token")
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    # First try auth0_id lookup
+    
+    raw = None
+    # Try auth0_id first
     raw = await db_client.db["users"].find_one({"auth0_id": token})
-    # If not found, and token looks like an email, fallback to email lookup
+    # Try firebase_uid
+    if not raw:
+        raw = await db_client.db["users"].find_one({"firebase_uid": token})
+    # Try by ObjectId (_id)
+    if not raw:
+        try:
+            raw = await db_client.db["users"].find_one({"_id": ObjectId(token)})
+        except Exception:
+            pass
+    # Try by email (for dev-login or email-based tokens)
     if not raw and "@" in token:
         raw = await db_client.db["users"].find_one({"email": token})
+    
     if not raw or raw.get("role") != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     return raw
