@@ -16,7 +16,7 @@ async def get_my_notifications(
     """
     Get all notifications for the logged-in user.
     """
-    return await notification_service.get_user_notifications(current_user.auth0_id, skip=skip, limit=limit)
+    return await notification_service.get_user_notifications(current_user.firebase_uid, skip=skip, limit=limit)
 
 @router.patch("/{notification_id}/read", response_model=NotificationInDB)
 async def mark_notification_read(
@@ -31,7 +31,7 @@ async def mark_notification_read(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
         
     # Security check - ensure the notification belongs to current user
-    if updated.user_id != current_user.auth0_id:
+    if updated.user_id != current_user.firebase_uid:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
         
     return updated

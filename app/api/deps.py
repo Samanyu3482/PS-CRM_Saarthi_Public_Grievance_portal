@@ -19,11 +19,11 @@ async def get_current_user(request: Request, token_payload: dict | None = Depend
     if raw_token and await is_token_blacklisted(raw_token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been logged out")
 
-    auth0_id = token_payload.get("sub")
-    if not auth0_id:
+    firebase_uid = token_payload.get("sub")
+    if not firebase_uid:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
     
-    user_doc = await db_client.db["users"].find_one({"auth0_id": auth0_id})
+    user_doc = await db_client.db["users"].find_one({"firebase_uid": firebase_uid})
     if not user_doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     

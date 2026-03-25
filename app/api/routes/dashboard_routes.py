@@ -16,7 +16,7 @@ def get_user_field(user: UserInDB, field_name: str, default: str) -> str:
 
 @router.get("/dashboard/citizen")
 async def citizen_dash(current_user: UserInDB = Depends(RoleChecker([RoleEnum.citizen]))):
-    return await dashboard_service.get_citizen_dashboard(current_user.auth0_id)
+    return await dashboard_service.get_citizen_dashboard(current_user.firebase_uid)
 
 @router.get("/dashboard/officer")
 async def officer_dash(current_user: UserInDB = Depends(RoleChecker([RoleEnum.officer]))):

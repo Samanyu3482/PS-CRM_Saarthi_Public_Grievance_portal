@@ -14,8 +14,8 @@ async def create_user(user_in: UserCreate) -> UserInDB:
         created_user["_id"] = str(created_user["_id"])
     return UserInDB(**created_user)
 
-async def get_user_by_auth0_id(auth0_id: str) -> UserInDB | None:
-    user = await db_client.db["users"].find_one({"auth0_id": auth0_id})
+async def get_user_by_firebase_uid(firebase_uid: str) -> UserInDB | None:
+    user = await db_client.db["users"].find_one({"firebase_uid": firebase_uid})
     if user:
         if "_id" in user:
             user["_id"] = str(user["_id"])

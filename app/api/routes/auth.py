@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from app.schemas.user import UserCreate, UserInDB, UserSignupRequest
 from app.services import user_service
 from app.api.deps import get_current_user
-from app.core.security import decode_jwt
+
 from app.core.config import settings
 
 from pydantic import BaseModel
@@ -10,6 +10,14 @@ import httpx
 import json
 
 
+<<<<<<< HEAD
+=======
+class DevLogin(BaseModel):
+    email: str
+    password: str | None = None
+
+
+>>>>>>> 6fa47c536d999062837bd1ac7f11c90cf66ee66e
 class FirebaseLogin(BaseModel):
     idToken: str
 
@@ -26,11 +34,16 @@ class DevLogin(BaseModel):
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/signup", response_model=UserInDB)
+<<<<<<< HEAD
 async def signup(signup_req: UserSignupRequest):
     user_data = signup_req.user_data
     
     # Check if user already exists in DB
     existing_user = await user_service.get_user_by_email(user_data.email)
+=======
+async def signup(user_in: UserCreate):
+    existing_user = await user_service.get_user_by_firebase_uid(user_in.firebase_uid)
+>>>>>>> 6fa47c536d999062837bd1ac7f11c90cf66ee66e
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -155,31 +168,6 @@ async def login(body: LoginRequest, response: Response):
 
 
 
-@router.post("/session", response_model=UserInDB)
-async def create_session(body: TokenBody, response: Response):
-    """Create a server-side HttpOnly session cookie from a client-provided JWT token (Auth0).
-    Client should POST { token: '<id_token>' } after a successful Auth0 login.
-    """
-    payload = decode_jwt(body.token)
-    auth0_id = payload.get("sub")
-    if not auth0_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token payload")
-
-    user = await user_service.get_user_by_auth0_id(auth0_id)
-    if not user:
-        # User needs to finish signup in our system
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found - please sign up")
-
-    # Set HttpOnly cookie
-    response.set_cookie(
-        key="access_token",
-        value=body.token,
-        httponly=True,
-        secure=False,  # set True in production (HTTPS)
-        samesite="lax",
-        max_age=3600,
-    )
-    return user
 
 
 @router.post("/dev-login", response_model=UserInDB)
@@ -191,7 +179,7 @@ async def dev_login(body: DevLogin, response: Response):
 
     response.set_cookie(
         key="access_token",
-        value=user.auth0_id,
+        value=user.firebase_uid,
         httponly=True,
         secure=False,
         samesite="lax",
@@ -244,7 +232,7 @@ async def firebase_login(body: FirebaseLogin, response: Response):
         uid = user_info.get("localId")
         
         # Check if user exists in our database
-        user = await user_service.get_user_by_auth0_id(uid)
+        user = await user_service.get_user_by_firebase_uid(uid)
         if not user:
             # Check by email as fallback
             user = await user_service.get_user_by_email(email)
@@ -308,7 +296,11 @@ async def official_login(body: OfficialLogin, response: Response):
     
     response.set_cookie(
         key="access_token",
+<<<<<<< HEAD
         value=raw_user["auth0_id"],
+=======
+        value=user.firebase_uid,
+>>>>>>> 6fa47c536d999062837bd1ac7f11c90cf66ee66e
         httponly=True,
         secure=False,
         samesite="lax",

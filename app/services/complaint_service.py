@@ -5,7 +5,7 @@ from fastapi.encoders import jsonable_encoder
 from typing import List, Optional
 from datetime import datetime, timezone
 
-async def create_complaint(complaint_in: ComplaintCreate, user_auth0_id: str) -> ComplaintInDB:
+async def create_complaint(complaint_in: ComplaintCreate, user_firebase_uid: str) -> ComplaintInDB:
     location_data = {
         "address": complaint_in.address,
         "city": complaint_in.city,
@@ -15,7 +15,7 @@ async def create_complaint(complaint_in: ComplaintCreate, user_auth0_id: str) ->
     }
     
     # AI Deduplication Check
-    existing_comps = await get_user_complaints(user_auth0_id)
+    existing_comps = await get_user_complaints(user_firebase_uid)
     if existing_comps:
         from app.services.ai_service import check_duplicate_complaint
         from fastapi import HTTPException, status
@@ -40,7 +40,7 @@ async def create_complaint(complaint_in: ComplaintCreate, user_auth0_id: str) ->
         "category": None,
         "location": location_data,
         "images": complaint_in.images or [],
-        "created_by": user_auth0_id,
+        "created_by": user_firebase_uid,
         "status": status,
         "priority": "medium",
         "assigned_to": assigned_to,
@@ -60,8 +60,8 @@ async def create_complaint(complaint_in: ComplaintCreate, user_auth0_id: str) ->
         
     return ComplaintInDB(**created_complaint)
 
-async def get_user_complaints(user_auth0_id: str) -> List[ComplaintInDB]:
-    cursor = db_client.db["complaints"].find({"created_by": user_auth0_id}).sort("created_at", -1)
+async def get_user_complaints(user_firebase_uid: str) -> List[ComplaintInDB]:
+    cursor = db_client.db["complaints"].find({"created_by": user_firebase_uid}).sort("created_at", -1)
     complaints = await cursor.to_list(length=100)
     result = []
     for comp in complaints:
