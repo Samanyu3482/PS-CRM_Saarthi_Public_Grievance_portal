@@ -19,34 +19,42 @@ TEST_USERS = [
         "auth0_id": "citizen_user_123",
         "name": "John Citizen",
         "phone": "1234567890",
-        "user_type": "Citizen",
+        "role": "citizen",
+        "address": "123 Main St",
+        "city": "Delhi",
+        "state": "Delhi",
+        "pincode": "110001",
     },
     {
         "email": "officer@example.com",
         "auth0_id": "officer_user_456",
         "name": "Jane Officer",
         "phone": "0987654321",
-        "user_type": "Officer",
+        "role": "officer",
         "designation": "Municipal Commissioner",
-        "ward_id": "W001",
+        "department": "Public Works",
+        "city": "Delhi",
+        "employee_id": "OFF-001",
     },
     {
         "email": "mla@example.com",
         "auth0_id": "mla_user_789",
         "name": "Ram MLA",
         "phone": "5555555555",
-        "user_type": "MpMla",
+        "role": "mp_mla",
         "constituency": "Central",
+        "state": "Delhi",
+        "party_name": "Independent",
     },
     {
-        "email": "ministry@example.com",
-        "auth0_id": "ministry_user_101",
-        "name": "Ministry Admin",
-        "phone": "9999999999",
-        "user_type": "Ministry",
-        "department": "Public Grievance",
+        "email": "admin@saarthi.gov.in",
+        "auth0_id": "admin_user_999",
+        "name": "System Admin",
+        "phone": "8888888888",
+        "role": "admin",
     },
 ]
+
 
 def seed():
     client = MongoClient(settings.MONGODB_URI)
@@ -62,11 +70,11 @@ def seed():
             print(f"  ✓ User {user_data['email']} already exists")
         else:
             users_collection.insert_one(user_data)
-            print(f"  ✓ Created {user_data['user_type']}: {user_data['email']}")
+            print(f"  ✓ Created {user_data['role']}: {user_data['email']}")
     
     print("\n📝 Test credentials for login:")
     for user in TEST_USERS:
-        print(f"  - {user['email']} (role: {user['user_type']})")
+        print(f"  - {user['email']} (role: {user['role']})")
     
     ministries_data = {
         "Ministry of Finance": {

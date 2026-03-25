@@ -7,6 +7,8 @@ class RoleEnum(str, Enum):
     officer = "officer"
     ministry = "ministry"
     mp_mla = "mp_mla"
+    mc = "mc"
+    admin = "admin"
 
 class UserBase(BaseModel):
     auth0_id: Optional[str] = None
@@ -39,8 +41,14 @@ class MpMla(UserBase):
     state: str
     party_name: str
 
+class McMember(UserBase):
+    role: Literal[RoleEnum.mc]
+    department: str
+    city: str
+    employee_id: str
+
 # Polymorphic validation schema based on 'role'
-UserCreate = Annotated[Union[Citizen, Officer, Ministry, MpMla], Field(discriminator="role")]
+UserCreate = Annotated[Union[Citizen, Officer, Ministry, MpMla, McMember], Field(discriminator="role")]
 
 class UserSignupRequest(BaseModel):
     user_data: UserCreate

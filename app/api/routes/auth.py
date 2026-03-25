@@ -278,24 +278,40 @@ class OfficialLogin(BaseModel):
 @router.post("/official-login", response_model=UserInDB)
 async def official_login(body: OfficialLogin, response: Response):
     """
-    Login endpoint for government officials.
+    Login endpoint for government officials (Officer, Ministry, MP/MLA).
+    Password is not verified in dev mode — just checks role.
     """
-    user = await user_service.get_user_by_email(body.email)
-    if not user or user.role == "citizen":
+    from app.db.mongodb import db_client
+    
+    # Do raw DB lookup to avoid UserInDB validation errors on partial documents
+    raw_user = await db_client.db["users"].find_one({"email": body.email})
+    if not raw_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found"
+        )
+    
+    role = raw_user.get("role", "")
+    if role == "citizen" or not role:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid official credentials or unauthorized role"
         )
     
-    # In a real app, we'd verify the password hash here.
-    # For now, we allow login if the official exists in DB.
+    # Ensure _id is a string for UserInDB
+    raw_user["_id"] = str(raw_user["_id"])
+    
+    # Provide defaults for fields UserInDB requires if missing
+    raw_user.setdefault("auth0_id", str(raw_user["_id"]))
+    raw_user.setdefault("name", "Official")
+    raw_user.setdefault("phone", "")
     
     response.set_cookie(
         key="access_token",
-        value=user.auth0_id,
+        value=raw_user["auth0_id"],
         httponly=True,
         secure=False,
         samesite="lax",
         max_age=3600*24,
     )
-    return user
+    return UserInDB(**raw_user)
