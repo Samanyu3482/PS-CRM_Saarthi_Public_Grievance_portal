@@ -11,11 +11,7 @@ class RoleEnum(str, Enum):
     admin = "admin"
 
 class UserBase(BaseModel):
-<<<<<<< HEAD
-    auth0_id: Optional[str] = None
-=======
-    firebase_uid: str
->>>>>>> 6fa47c536d999062837bd1ac7f11c90cf66ee66e
+    firebase_uid: Optional[str] = None
     name: str
     email: EmailStr
     phone: str
@@ -61,7 +57,8 @@ class UserSignupRequest(BaseModel):
 
 class UserInDB(BaseModel):
     id: str = Field(alias="_id")
-    firebase_uid: str
+    firebase_uid: Optional[str] = None
+    auth0_id: Optional[str] = None
     role: RoleEnum
     name: str
     email: EmailStr

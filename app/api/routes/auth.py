@@ -9,15 +9,6 @@ from pydantic import BaseModel
 import httpx
 import json
 
-
-<<<<<<< HEAD
-=======
-class DevLogin(BaseModel):
-    email: str
-    password: str | None = None
-
-
->>>>>>> 6fa47c536d999062837bd1ac7f11c90cf66ee66e
 class FirebaseLogin(BaseModel):
     idToken: str
 
@@ -27,23 +18,16 @@ class LoginRequest(BaseModel):
 
 class TokenBody(BaseModel):
     token: str
-
 class DevLogin(BaseModel):
     email: str
-
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/signup", response_model=UserInDB)
-<<<<<<< HEAD
 async def signup(signup_req: UserSignupRequest):
     user_data = signup_req.user_data
     
     # Check if user already exists in DB
     existing_user = await user_service.get_user_by_email(user_data.email)
-=======
-async def signup(user_in: UserCreate):
-    existing_user = await user_service.get_user_by_firebase_uid(user_in.firebase_uid)
->>>>>>> 6fa47c536d999062837bd1ac7f11c90cf66ee66e
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -114,7 +98,7 @@ async def signup(user_in: UserCreate):
         raise HTTPException(status_code=400, detail="Either password or id_token must be provided")
     
     # 3. Create user in MongoDB
-    user_data.auth0_id = uid
+    user_data.firebase_uid = uid
     return await user_service.create_user(user_data)
 
 @router.get("/me", response_model=UserInDB)
@@ -147,7 +131,7 @@ async def login(body: LoginRequest, response: Response):
     uid = fb_data.get("localId")
     
     # 2. Get user from DB
-    user = await user_service.get_user_by_auth0_id(uid)
+    user = await user_service.get_user_by_firebase_uid(uid)
     if not user:
         # Fallback to email
         user = await user_service.get_user_by_email(body.email)
@@ -179,7 +163,7 @@ async def dev_login(body: DevLogin, response: Response):
 
     response.set_cookie(
         key="access_token",
-        value=user.firebase_uid,
+        value=user.firebase_uid or user.id,
         httponly=True,
         secure=False,
         samesite="lax",
@@ -290,17 +274,13 @@ async def official_login(body: OfficialLogin, response: Response):
     raw_user["_id"] = str(raw_user["_id"])
     
     # Provide defaults for fields UserInDB requires if missing
-    raw_user.setdefault("auth0_id", str(raw_user["_id"]))
+    raw_user.setdefault("firebase_uid", str(raw_user["_id"]))
     raw_user.setdefault("name", "Official")
     raw_user.setdefault("phone", "")
     
     response.set_cookie(
         key="access_token",
-<<<<<<< HEAD
-        value=raw_user["auth0_id"],
-=======
-        value=user.firebase_uid,
->>>>>>> 6fa47c536d999062837bd1ac7f11c90cf66ee66e
+        value=raw_user["firebase_uid"],
         httponly=True,
         secure=False,
         samesite="lax",
