@@ -60,6 +60,10 @@ Ministry of Education:
 
 Ministry of Agriculture:
   - Farmers Welfare → PM-KISAN Issues, Crop Insurance, Fertilizer Supply
+
+Ministry of Water:
+  - Department of Water Resources → River Development, Groundwater Issues, Flood Control
+  - Department of Drinking Water and Sanitation → Piped Water Supply, Jal Jeevan Mission, Sanitation Issues
 ----------------------------------------
 
 Complaint:
@@ -117,6 +121,11 @@ _KEYWORD_FALLBACK: list[tuple[re.Pattern, dict]] = [
         "ministry": "Ministry of Agriculture",
         "department": "Farmers Welfare",
         "sub_department": "PM-KISAN Issues",
+    }),
+    (re.compile(r"\b(water|drinking water|flood|river|jal|sanitation|pipeline| नल |पानी)\b", re.IGNORECASE), {
+        "ministry": "Ministry of Water",
+        "department": "Department of Drinking Water and Sanitation",
+        "sub_department": "Piped Water Supply",
     }),
 ]
 

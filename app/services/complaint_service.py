@@ -177,6 +177,21 @@ async def update_complaint(complaint_id: str, update_data: ComplaintUpdate) -> O
     return await get_complaint_by_id(complaint_id)
 
 
+async def delete_complaint(complaint_id: str, user_id: str) -> bool:
+    """Delete a complaint if the user is the creator."""
+    from bson import ObjectId
+    try:
+        obj_id = ObjectId(complaint_id)
+    except Exception:
+        return False
+        
+    result = await db_client.db["complaints"].delete_one(
+        {"_id": obj_id, "created_by": user_id}
+    )
+    return result.deleted_count > 0
+
+
+
 async def add_feedback(complaint_id: str, rating: int, comment: Optional[str]) -> Optional[ComplaintInDB]:
     from bson import ObjectId
     try:
