@@ -50,6 +50,16 @@ async def get_spam_complaints(
     return await complaint_service.get_flagged_spam_complaints(skip=skip, limit=limit)
 
 
+@router.get("/locations", response_model=List[dict])
+async def get_complaint_locations(
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Get coordinates, category, and status of all non-spam complaints for heatmap visualization.
+    """
+    return await complaint_service.get_all_complaint_locations()
+
+
 @router.get("/{complaint_id}", response_model=ComplaintInDB)
 async def get_complaint(
     complaint_id: str,
@@ -129,3 +139,4 @@ async def add_note(
     if not updated:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to add note")
     return updated
+

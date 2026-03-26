@@ -1,6 +1,8 @@
 fastapi
 uvicorn
 motor
+certifi
+dnspython
 pydantic[email]
 pydantic-settings
 pyjwt

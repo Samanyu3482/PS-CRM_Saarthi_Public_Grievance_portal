@@ -1,41 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from typing import Optional
 from pydantic import BaseModel, EmailStr
 from app.db.mongodb import db_client
 from app.schemas.user import RoleEnum, UserInDB
-from bson import ObjectId
+from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
-async def require_admin(request: Request):
-    """Dependency: reads session cookie and verifies user is admin.
-    Supports auth0_id, firebase_uid, email, and _id lookups."""
-    token = request.cookies.get("access_token")
-    if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    
-    raw = None
-    # Try auth0_id first
-    raw = await db_client.db["users"].find_one({"auth0_id": token})
-    # Try firebase_uid
-    if not raw:
-        raw = await db_client.db["users"].find_one({"firebase_uid": token})
-    # Try by ObjectId (_id)
-    if not raw:
-        try:
-            raw = await db_client.db["users"].find_one({"_id": ObjectId(token)})
-        except Exception:
-            pass
-    # Try by email (for dev-login or email-based tokens)
-    if not raw and "@" in token:
-        raw = await db_client.db["users"].find_one({"email": token})
-    
-    if not raw or raw.get("role") != "admin":
+async def require_admin(current_user: UserInDB = Depends(get_current_user)):
+    """Dependency: verifies the caller is authenticated and has admin role."""
+    if current_user.role != RoleEnum.admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-    return raw
+    return current_user
 
 
 def _serialize(doc: dict) -> dict:
