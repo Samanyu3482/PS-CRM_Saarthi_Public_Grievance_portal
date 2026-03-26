@@ -105,6 +105,31 @@ async def get_platform_stats(_admin=Depends(require_admin)):
     }
 
 
+@router.get("/department-feedback")
+async def get_department_feedback(_admin=Depends(require_admin)):
+    """Return average feedback ratings aggregated by department."""
+    pipeline = [
+        {"$match": {"feedback.rating": {"$exists": True}}},
+        {"$group": {
+            "_id": {"$ifNull": ["$department", "Unknown Department"]},
+            "average_rating": {"$avg": "$feedback.rating"},
+            "total_feedbacks": {"$sum": 1}
+        }},
+        {"$sort": {"average_rating": -1}}
+    ]
+    cursor = db_client.db["complaints"].aggregate(pipeline)
+    results = await cursor.to_list(length=200)
+    
+    return [
+        {
+            "department": r["_id"],
+            "average_rating": round(r["average_rating"], 1),
+            "total_feedbacks": r["total_feedbacks"]
+        }
+        for r in results
+    ]
+
+
 @router.get("/recent-complaints")
 async def get_recent_complaints(_admin=Depends(require_admin)):
     """Return 10 most recent complaints."""
