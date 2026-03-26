@@ -146,7 +146,8 @@ async def login(body: LoginRequest, response: Response):
         httponly=True,
         secure=False,
         samesite="lax",
-        max_age=3600*24,
+        max_age=3600,
+        path="/",
     )
     return user
 
@@ -168,6 +169,7 @@ async def dev_login(body: DevLogin, response: Response):
         secure=False,
         samesite="lax",
         max_age=3600,
+        path="/",
     )
     return user
 
@@ -181,7 +183,7 @@ async def logout(request: Request, response: Response):
         await user_service.blacklist_token(token)
 
     # Clear cookie
-    response.delete_cookie("access_token")
+    response.delete_cookie("access_token", path="/")
     return {"message": "Successfully logged out"}
 
 
@@ -235,7 +237,8 @@ async def firebase_login(body: FirebaseLogin, response: Response):
             httponly=True,
             secure=False,
             samesite="lax",
-            max_age=3600*24, # 1 day
+            max_age=3600,
+            path="/",
         )
         return user
     except HTTPException:
@@ -284,6 +287,7 @@ async def official_login(body: OfficialLogin, response: Response):
         httponly=True,
         secure=False,
         samesite="lax",
-        max_age=3600*24,
+        max_age=3600,
+        path="/",
     )
     return UserInDB(**raw_user)
