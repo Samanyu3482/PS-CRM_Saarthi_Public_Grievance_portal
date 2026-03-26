@@ -69,6 +69,22 @@ async def get_complaint(
         
     return complaint
 
+@router.delete("/{complaint_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_complaint_endpoint(
+    complaint_id: str,
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Delete a complaint. Only the citizen who created it can delete it.
+    """
+    if current_user.role != RoleEnum.citizen:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only citizens can delete their complaints")
+        
+    success = await complaint_service.delete_complaint(complaint_id, current_user.firebase_uid)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Complaint not found or not authorized to delete")
+    return None
+
 @router.patch("/{complaint_id}/status", response_model=ComplaintInDB)
 async def update_complaint_status(
     complaint_id: str,
