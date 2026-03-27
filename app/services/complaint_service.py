@@ -241,3 +241,30 @@ async def get_flagged_spam_complaints(skip: int = 0, limit: int = 50) -> List[Co
         comp["_id"] = str(comp["_id"])
         result.append(ComplaintInDB(**comp))
     return result
+
+
+async def get_all_complaint_locations() -> List[dict]:
+    """Fetch coordinates, category, and status of all complaints for heatmap."""
+    cursor = db_client.db["complaints"].find(
+        {"location.coordinates": {"$ne": None}, "is_spam": {"$ne": True}},
+        {"location.coordinates": 1, "category": 1, "status": 1, "title": 1, "created_at": 1}
+    )
+    complaints = await cursor.to_list(length=1000)
+    result = []
+    for comp in complaints:
+        if comp.get("location") and comp["location"].get("coordinates"):
+            coords = comp["location"]["coordinates"]
+            try:
+                lat = float(coords.get("lat"))
+                lng = float(coords.get("lng"))
+            except (TypeError, ValueError):
+                continue
+
+            result.append({
+                "lat": lat,
+                "lng": lng,
+                "category": comp.get("category"),
+                "status": comp.get("status"),
+                "title": comp.get("title")
+            })
+    return result
