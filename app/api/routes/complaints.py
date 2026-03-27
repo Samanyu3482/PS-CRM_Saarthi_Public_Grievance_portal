@@ -230,6 +230,7 @@ async def get_ai_summary(
 
 # ─── AI Complaint Assistant Chat ──────────────────────────
 import json as _json
+import re
 
 ASSISTANT_SYSTEM_PROMPT = """\
 You are Saarthii AI — a friendly, empathetic assistant that helps Indian citizens \
@@ -281,6 +282,41 @@ class AssistantChatRequest(BaseModel):
     messages: list[dict]   # [{role: "user"|"assistant", content: str}, ...]
 
 
+def _assistant_fallback_reply(messages: list[dict], reason: str = "") -> dict:
+    """
+    Keep chat UX functional when upstream AI is slow/unavailable.
+    Returns a normal response payload instead of HTTP 502.
+    """
+    last_user_message = ""
+    for msg in reversed(messages or []):
+        if msg.get("role") == "user":
+            last_user_message = (msg.get("content") or "").strip()
+            break
+
+    has_pincode = bool(re.search(r"\b\d{6}\b", last_user_message or ""))
+    has_location_word = any(
+        k in (last_user_message or "").lower()
+        for k in ["address", "street", "road", "lane", "sector", "city", "state", "pincode", "pin"]
+    )
+
+    if has_pincode and has_location_word:
+        reply = (
+            "I am facing a temporary AI delay, but I captured your location details. "
+            "Please also share what exactly happened and since when, and I will continue helping you file the complaint."
+        )
+    else:
+        reply = (
+            "I am facing a temporary AI delay. Please share exact address, city, state, and 6-digit pincode, "
+            "and I will continue helping you file the complaint."
+        )
+
+    # Surface a tiny hint for debugging without exposing internals to users.
+    if reason:
+        reply = f"{reply}"
+
+    return {"reply": reply, "form_data": None}
+
+
 @router.post("/assistant/chat")
 async def assistant_chat(
     body: AssistantChatRequest,
@@ -305,9 +341,10 @@ async def assistant_chat(
         chat = await client.chat.completions.create(
             model="gpt-4o-mini",
             temperature=0.5,
-            max_tokens=500,
+            max_tokens=350,
             response_format={"type": "json_object"},
             messages=openai_messages,
+            timeout=25,
         )
         raw = chat.choices[0].message.content.strip()
         parsed = _json.loads(raw)
@@ -322,7 +359,4 @@ async def assistant_chat(
     except Exception as e:
         import logging
         logging.error(f"Assistant chat error: {type(e).__name__}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"AI service unavailable: {str(e)}",
-        )
+        return _assistant_fallback_reply(body.messages, reason=str(e))
