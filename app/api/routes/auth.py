@@ -254,7 +254,7 @@ class OfficialLogin(BaseModel):
 async def official_login(body: OfficialLogin, response: Response):
     """
     Login endpoint for government officials (Officer, Ministry, MP/MLA).
-    Password is not verified in dev mode — just checks role.
+    Verifies bcrypt password hash if present; otherwise allows login (dev/legacy mode).
     """
     from app.db.mongodb import db_client
     
@@ -272,6 +272,16 @@ async def official_login(body: OfficialLogin, response: Response):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid official credentials or unauthorized role"
         )
+    
+    # Verify password if hash exists
+    stored_hash = raw_user.get("password_hash")
+    if stored_hash:
+        import bcrypt
+        if not bcrypt.checkpw(body.password.encode(), stored_hash.encode()):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid password"
+            )
     
     # Ensure _id is a string for UserInDB
     raw_user["_id"] = str(raw_user["_id"])

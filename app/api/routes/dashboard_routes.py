@@ -38,6 +38,11 @@ async def region_dash(
     valid_city = constituency  # Assuming constituency maps to city in MVP schema
     return await dashboard_service.get_region_dashboard(state=valid_state, city=valid_city)
 
+@router.get("/dashboard/ministry")
+async def ministry_dash(current_user: UserInDB = Depends(RoleChecker([RoleEnum.ministry]))):
+    ministry_name = get_user_field(current_user, 'ministry_name', 'Ministry of Road Transport and Highways')
+    return await dashboard_service.get_ministry_dashboard(ministry_name)
+
 @router.get("/dashboard/admin")
 async def admin_dash(current_user: UserInDB = Depends(RoleChecker([RoleEnum.ministry]))):
     # Ministry essentially acts as Admin for the system.

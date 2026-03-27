@@ -116,3 +116,96 @@ async def get_admin_dashboard() -> Dict[str, Any]:
         "avg_resolution_time": 4.5,
         "sla_compliance": 87
     }
+
+
+async def get_ministry_dashboard(ministry_name: str) -> Dict[str, Any]:
+    """Aggregate dashboard data for a specific ministry."""
+    match_stage = {"$match": {"ministry": ministry_name}}
+
+    pipeline = [
+        match_stage,
+        {"$facet": {
+            "total": [{"$count": "count"}],
+            # ── Status breakdown ──
+            "submitted": [{"$match": {"status": "submitted"}}, {"$count": "count"}],
+            "classified": [{"$match": {"status": "classified"}}, {"$count": "count"}],
+            "assigned": [{"$match": {"status": "assigned"}}, {"$count": "count"}],
+            "in_progress": [{"$match": {"status": "in_progress"}}, {"$count": "count"}],
+            "resolved": [{"$match": {"status": {"$in": ["resolved", "closed"]}}}, {"$count": "count"}],
+            # ── Priority breakdown ──
+            "priority_low": [{"$match": {"priority": "low"}}, {"$count": "count"}],
+            "priority_medium": [{"$match": {"priority": "medium"}}, {"$count": "count"}],
+            "priority_high": [{"$match": {"priority": "high"}}, {"$count": "count"}],
+            "priority_critical": [{"$match": {"priority": "critical"}}, {"$count": "count"}],
+            # ── Top 5 categories ──
+            "top_categories": [
+                {"$group": {"_id": "$category", "count": {"$sum": 1}}},
+                {"$sort": {"count": -1}},
+                {"$limit": 5},
+            ],
+            # ── Regional breakdown (by city) ──
+            "by_city": [
+                {"$group": {"_id": "$location.city", "count": {"$sum": 1}}},
+                {"$sort": {"count": -1}},
+                {"$limit": 8},
+            ],
+            # ── 5 most recent ──
+            "recent": [
+                {"$sort": {"created_at": -1}},
+                {"$limit": 5},
+                {"$project": {
+                    "title": 1, "status": 1, "priority": 1,
+                    "category": 1, "location.city": 1,
+                    "created_at": 1,
+                }},
+            ],
+        }},
+    ]
+
+    docs = await db_client.db["complaints"].aggregate(pipeline).to_list(1)
+    data = docs[0] if docs else {}
+
+    def gc(key: str) -> int:
+        return data.get(key, [{"count": 0}])[0]["count"] if data.get(key) else 0
+
+    total = gc("total")
+    resolved = gc("resolved")
+    resolution_rate = round((resolved / total) * 100, 1) if total else 0.0
+
+    # Format recent complaints
+    recent = []
+    for c in data.get("recent", []):
+        c["_id"] = str(c["_id"])
+        recent.append(c)
+
+    top_categories = [
+        {"category": item["_id"] or "Uncategorized", "count": item["count"]}
+        for item in data.get("top_categories", [])
+    ]
+
+    by_city = [
+        {"city": item["_id"] or "Unknown", "count": item["count"]}
+        for item in data.get("by_city", [])
+    ]
+
+    return {
+        "ministry_name": ministry_name,
+        "total_complaints": total,
+        "resolution_rate": resolution_rate,
+        "status_breakdown": {
+            "submitted": gc("submitted"),
+            "classified": gc("classified"),
+            "assigned": gc("assigned"),
+            "in_progress": gc("in_progress"),
+            "resolved": resolved,
+        },
+        "priority_breakdown": {
+            "low": gc("priority_low"),
+            "medium": gc("priority_medium"),
+            "high": gc("priority_high"),
+            "critical": gc("priority_critical"),
+        },
+        "top_categories": top_categories,
+        "by_city": by_city,
+        "recent_complaints": recent,
+    }
