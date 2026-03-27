@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from typing import List
+from typing import Any, List
 from app.schemas.user import UserInDB, RoleEnum
 from app.schemas.complaint import ComplaintCreate, ComplaintInDB, ComplaintUpdate
 from app.api.deps import get_current_user, RoleChecker
@@ -156,18 +156,21 @@ async def add_note(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to add note")
     return updated
 
-<<<<<<< HEAD
-=======
 
 # ─── AI Problem Summary ───────────────────────────────────
-from openai import AsyncOpenAI
 from app.core.config import settings
 
-_openai_client: AsyncOpenAI | None = None
+_openai_client: Any | None = None
 
-def _get_openai_client() -> AsyncOpenAI:
+def _get_openai_client() -> Any:
     global _openai_client
     if _openai_client is None:
+        if not settings.OPENAI_API_KEY:
+            raise RuntimeError("OPENAI_API_KEY is not configured")
+        try:
+            from openai import AsyncOpenAI
+        except ModuleNotFoundError as exc:
+            raise RuntimeError("OpenAI package is not installed in the backend environment") from exc
         _openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
     return _openai_client
 
@@ -323,4 +326,3 @@ async def assistant_chat(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"AI service unavailable: {str(e)}",
         )
->>>>>>> ae60b17d518a9da27ce07df1e7da8ff81c9055ec
