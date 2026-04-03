@@ -5,7 +5,12 @@ from typing import List, Optional
 from datetime import datetime, timezone
 
 
-async def create_complaint(complaint_in: ComplaintCreate, user_firebase_uid: str) -> ComplaintInDB:
+async def create_complaint(
+    complaint_in: ComplaintCreate,
+    user_firebase_uid: str,
+    user_name: str = "",
+    user_email: str = "",
+) -> ComplaintInDB:
     from app.services.ai_service import get_embedding, check_duplicate_complaint, check_spam
     from app.services.classification_service import classify_complaint
     from fastapi import HTTPException, status
@@ -122,6 +127,28 @@ async def create_complaint(complaint_in: ComplaintCreate, user_firebase_uid: str
     insert_result = await db_client.db["complaints"].insert_one(complaint_dict)
     created = await db_client.db["complaints"].find_one({"_id": insert_result.inserted_id})
     created["_id"] = str(created["_id"])
+
+    # ── 6. Send email notifications (ministry + citizen) ──────────────────────
+    print(f"📧 [MAIL] Attempting to send emails — ministry={routing_info['ministry']}, citizen={user_email}")
+    try:
+        from app.services.mail_service import send_complaint_emails
+        send_complaint_emails(
+            complaint_id=created["_id"],
+            title=complaint_in.title,
+            description=complaint_in.description,
+            ministry=routing_info["ministry"],
+            department=routing_info["department"],
+            location=location_data,
+            priority="medium",
+            citizen_name=user_name or "Citizen",
+            citizen_email=user_email,
+        )
+        print("✅ [MAIL] Emails sent successfully!")
+    except Exception as e:
+        print(f"❌ [MAIL] Email notification failed: {type(e).__name__}: {e}")
+        import logging, traceback
+        logging.getLogger(__name__).exception("Email notification failed — complaint was still saved.")
+
     return ComplaintInDB(**created)
 
 

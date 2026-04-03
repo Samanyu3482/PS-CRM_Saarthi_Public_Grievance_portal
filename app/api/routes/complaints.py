@@ -15,7 +15,12 @@ async def create_complaint(
     """
     Submit a new complaint. Only accessible by Citizens.
     """
-    return await complaint_service.create_complaint(complaint_in, user_firebase_uid=current_user.firebase_uid)
+    return await complaint_service.create_complaint(
+        complaint_in,
+        user_firebase_uid=current_user.firebase_uid,
+        user_name=current_user.name,
+        user_email=current_user.email,
+    )
 
 @router.get("/my", response_model=List[ComplaintInDB])
 async def get_my_complaints(
@@ -58,6 +63,27 @@ async def get_complaint_locations(
     Get coordinates, category, and status of all non-spam complaints for heatmap visualization.
     """
     return await complaint_service.get_all_complaint_locations()
+
+
+@router.get("/{complaint_id}/track")
+async def track_complaint(complaint_id: str):
+    """
+    Public (no-auth) endpoint for QR-code tracking.
+    Returns only non-sensitive status information.
+    """
+    complaint = await complaint_service.get_complaint_by_id(complaint_id)
+    if not complaint:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Complaint not found")
+
+    return {
+        "complaint_id": complaint.id,
+        "title": complaint.title,
+        "status": complaint.status.value,
+        "priority": complaint.priority.value,
+        "ministry": complaint.ministry,
+        "department": complaint.department,
+        "created_at": complaint.created_at.isoformat(),
+    }
 
 
 @router.get("/{complaint_id}", response_model=ComplaintInDB)

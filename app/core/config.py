@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     FIREBASE_MESSAGING_SENDER_ID: str = ""
     FIREBASE_APP_ID: str = ""
     FIREBASE_MEASUREMENT_ID: str = ""
+    GMAIL_APP_PASSWORD: str = ""
+    FRONTEND_URL: str = "http://localhost:5173"
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=True, extra="ignore")
 
