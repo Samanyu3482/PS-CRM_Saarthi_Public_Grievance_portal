@@ -47,3 +47,8 @@ async def ministry_dash(current_user: UserInDB = Depends(RoleChecker([RoleEnum.m
 async def admin_dash(current_user: UserInDB = Depends(RoleChecker([RoleEnum.ministry]))):
     # Ministry essentially acts as Admin for the system.
     return await dashboard_service.get_admin_dashboard()
+
+@router.get("/dashboard/delhi_cm")
+async def delhi_cm_dash(current_user: UserInDB = Depends(RoleChecker([RoleEnum.delhi_cm]))):
+    return await dashboard_service.get_delhi_cm_dashboard()
+

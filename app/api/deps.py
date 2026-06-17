@@ -1,9 +1,9 @@
 from fastapi import Depends, HTTPException, status, Request
 from app.core.security import verify_token, verify_token_from_cookie
-from app.db.mongodb import db_client
+from app.db.database import get_db_ctx
+from app.db.models import UserDB
 from app.schemas.user import UserInDB, RoleEnum
-from app.services.user_service import is_token_blacklisted
-from bson import ObjectId
+from sqlalchemy import select
 
 async def get_current_user(request: Request, token_payload: dict | None = Depends(verify_token)) -> UserInDB:
     # Try Authorization header first; if not present, attempt cookie-based session
@@ -20,27 +20,35 @@ async def get_current_user(request: Request, token_payload: dict | None = Depend
     if not firebase_uid:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
     
-    # Try multiple lookup strategies to find the user
-    user_doc = await db_client.db["users"].find_one({"firebase_uid": firebase_uid})
-    if not user_doc:
-        user_doc = await db_client.db["users"].find_one({"auth0_id": firebase_uid})
-    if not user_doc:
-        try:
-            user_doc = await db_client.db["users"].find_one({"_id": ObjectId(firebase_uid)})
-        except Exception:
-            pass
-    if not user_doc and "@" in firebase_uid:
-        user_doc = await db_client.db["users"].find_one({"email": firebase_uid})
-    
-    if not user_doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    
-    if "_id" in user_doc:
-        user_doc["_id"] = str(user_doc["_id"])
-    # Provide defaults for fields UserInDB requires
-    user_doc.setdefault("firebase_uid", str(user_doc["_id"]))
-    user_doc.setdefault("name", "")
-    user_doc.setdefault("phone", "")
+    async with get_db_ctx() as session:
+        # Check by firebase_uid
+        stmt = select(UserDB).where(UserDB.firebase_uid == firebase_uid)
+        result = await session.execute(stmt)
+        user_model = result.scalar_one_or_none()
+        
+        if not user_model:
+            # Check by auth0_id
+            stmt = select(UserDB).where(UserDB.auth0_id == firebase_uid)
+            result = await session.execute(stmt)
+            user_model = result.scalar_one_or_none()
+            
+        if not user_model:
+            # Check by id (primary key)
+            stmt = select(UserDB).where(UserDB.id == firebase_uid)
+            result = await session.execute(stmt)
+            user_model = result.scalar_one_or_none()
+            
+        if not user_model and "@" in firebase_uid:
+            # Check by email
+            stmt = select(UserDB).where(UserDB.email == firebase_uid)
+            result = await session.execute(stmt)
+            user_model = result.scalar_one_or_none()
+            
+        if not user_model:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+            
+        user_doc = user_model.to_dict()
+        
     return UserInDB(**user_doc)
 
 class RoleChecker:

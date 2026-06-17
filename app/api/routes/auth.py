@@ -253,51 +253,53 @@ class OfficialLogin(BaseModel):
 @router.post("/official-login", response_model=UserInDB)
 async def official_login(body: OfficialLogin, response: Response):
     """
-    Login endpoint for government officials (Officer, Ministry, MP/MLA).
-    Verifies bcrypt password hash if present; otherwise allows login (dev/legacy mode).
+    Login endpoint for government officials (Officer, Ministry, MP/MLA, Delhi CM).
+    Verifies bcrypt password hash against PostgreSQL (Neon DB).
     """
-    from app.db.mongodb import db_client
-    
-    # Do raw DB lookup to avoid UserInDB validation errors on partial documents
-    raw_user = await db_client.db["users"].find_one({"email": body.email})
-    if not raw_user:
+    from app.db.database import get_db_ctx
+    from app.db.models import UserDB
+    from sqlalchemy import select
+    import bcrypt
+
+    async with get_db_ctx() as session:
+        stmt = select(UserDB).where(UserDB.email == body.email)
+        result = await session.execute(stmt)
+        user_model = result.scalar_one_or_none()
+
+    if not user_model:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found"
         )
     
-    role = raw_user.get("role", "")
+    role = user_model.role or ""
     if role == "citizen" or not role:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid official credentials or unauthorized role"
         )
-    
-    # Verify password if hash exists
-    stored_hash = raw_user.get("password_hash")
+
+    # Verify bcrypt password hash
+    stored_hash = user_model.password_hash
     if stored_hash:
-        import bcrypt
         if not bcrypt.checkpw(body.password.encode(), stored_hash.encode()):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid password"
             )
-    
-    # Ensure _id is a string for UserInDB
-    raw_user["_id"] = str(raw_user["_id"])
-    
-    # Provide defaults for fields UserInDB requires if missing
-    raw_user.setdefault("firebase_uid", str(raw_user["_id"]))
-    raw_user.setdefault("name", "Official")
-    raw_user.setdefault("phone", "")
-    
+
+    user_doc = user_model.to_dict()
+
+    # Cookie value = firebase_uid; deps.py looks up user by firebase_uid from cookie
+    cookie_value = user_model.firebase_uid or user_model.id
+
     response.set_cookie(
         key="access_token",
-        value=raw_user["firebase_uid"],
+        value=cookie_value,
         httponly=True,
         secure=False,
         samesite="lax",
         max_age=3600,
         path="/",
     )
-    return UserInDB(**raw_user)
+    return UserInDB(**user_doc)

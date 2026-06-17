@@ -1,30 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Optional
 from pydantic import BaseModel, EmailStr
-from app.db.mongodb import db_client
+from app.db.database import get_db_ctx
+from app.db.models import UserDB, ComplaintDB
 from app.schemas.user import RoleEnum, UserInDB
 from app.api.deps import get_current_user
+from sqlalchemy import select, func, Float
+from datetime import datetime
 
 router = APIRouter(prefix="/admin", tags=["admin"])
-
-
-# ── helpers ──────────────────────────────────────────────────────────────────
 
 async def require_admin(current_user: UserInDB = Depends(get_current_user)):
     """Dependency: verifies the caller is authenticated and has admin role."""
     if current_user.role != RoleEnum.admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     return current_user
-
-
-def _serialize(doc: dict) -> dict:
-    doc["_id"] = str(doc["_id"])
-    doc.setdefault("auth0_id", doc["_id"])
-    doc.setdefault("name", "")
-    doc.setdefault("phone", "")
-    doc.setdefault("role", "citizen")
-    return doc
-
 
 # ── schemas ───────────────────────────────────────────────────────────────────
 
@@ -48,16 +38,16 @@ class AdminUserCreate(BaseModel):
     address: Optional[str] = None
     pincode: Optional[str] = None
 
-
 # ── routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/stats")
 async def get_stats(_admin=Depends(require_admin)):
     """Return per-role user counts."""
-    pipeline = [{"$group": {"_id": "$role", "count": {"$sum": 1}}}]
-    cursor = db_client.db["users"].aggregate(pipeline)
-    results = await cursor.to_list(length=100)
-    stats = {r["_id"]: r["count"] for r in results if r["_id"]}
+    async with get_db_ctx() as session:
+        stmt = select(UserDB.role, func.count()).group_by(UserDB.role)
+        result = await session.execute(stmt)
+        stats = {row[0]: row[1] for row in result.all() if row[0]}
+        
     return {
         "citizen": stats.get("citizen", 0),
         "officer": stats.get("officer", 0),
@@ -68,13 +58,13 @@ async def get_stats(_admin=Depends(require_admin)):
         "total": sum(stats.values()),
     }
 
-
 @router.get("/platform-stats")
 async def get_platform_stats(_admin=Depends(require_admin)):
     """Return platform-wide complaint statistics."""
-    total = await db_client.db["complaints"].count_documents({})
-    resolved = await db_client.db["complaints"].count_documents({"status": "resolved"})
-    pending = await db_client.db["complaints"].count_documents({"status": {"$in": ["submitted", "classified", "assigned", "in_progress"]}})
+    async with get_db_ctx() as session:
+        total = (await session.execute(select(func.count(ComplaintDB.id)))).scalar() or 0
+        resolved = (await session.execute(select(func.count(ComplaintDB.id)).where(ComplaintDB.status == "resolved"))).scalar() or 0
+        pending = (await session.execute(select(func.count(ComplaintDB.id)).where(ComplaintDB.status.in_(["submitted", "classified", "assigned", "in_progress"])))).scalar() or 0
     
     return {
         "total_complaints": total,
@@ -83,93 +73,109 @@ async def get_platform_stats(_admin=Depends(require_admin)):
         "resolution_rate": round(resolved / total * 100, 2) if total > 0 else 0
     }
 
-
 @router.get("/department-feedback")
 async def get_department_feedback(_admin=Depends(require_admin)):
     """Return average feedback ratings aggregated by department."""
-    pipeline = [
-        {"$match": {"feedback.rating": {"$exists": True}}},
-        {"$group": {
-            "_id": {"$ifNull": ["$department", "Unknown Department"]},
-            "average_rating": {"$avg": "$feedback.rating"},
-            "total_feedbacks": {"$sum": 1}
-        }},
-        {"$sort": {"average_rating": -1}}
-    ]
-    cursor = db_client.db["complaints"].aggregate(pipeline)
-    results = await cursor.to_list(length=200)
+    rating_expr = func.cast(func.jsonb_extract_path_text(ComplaintDB.feedback, 'rating'), Float)
+    async with get_db_ctx() as session:
+        stmt = (
+            select(
+                ComplaintDB.department.label("department"),
+                func.avg(rating_expr).label("average_rating"),
+                func.count(rating_expr).label("total_feedbacks")
+            )
+            .where(func.jsonb_extract_path_text(ComplaintDB.feedback, 'rating').isnot(None))
+            .group_by(ComplaintDB.department)
+            .order_by(func.avg(rating_expr).desc())
+        )
+        rows = (await session.execute(stmt)).all()
     
     return [
         {
-            "department": r["_id"],
-            "average_rating": round(r["average_rating"], 1),
-            "total_feedbacks": r["total_feedbacks"]
+            "department": row.department or "Unknown Department",
+            "average_rating": round(float(row.average_rating or 0.0), 1),
+            "total_feedbacks": int(row.total_feedbacks or 0)
         }
-        for r in results
+        for row in rows
     ]
-
 
 @router.get("/recent-complaints")
 async def get_recent_complaints(_admin=Depends(require_admin)):
     """Return 10 most recent complaints."""
-    cursor = db_client.db["complaints"].find().sort("created_at", -1).limit(10)
-    complaints = await cursor.to_list(length=10)
+    async with get_db_ctx() as session:
+        stmt = select(ComplaintDB).order_by(ComplaintDB.created_at.desc()).limit(10)
+        result = await session.execute(stmt)
+        complaints = [c.to_dict() for c in result.scalars().all()]
+        
     for c in complaints:
-        c["_id"] = str(c["_id"])
-        # Ensure created_at is serialized
-        if "created_at" in c and c["created_at"]:
-             if hasattr(c["created_at"], "isoformat"):
-                 c["created_at"] = c["created_at"].isoformat()
-             else:
-                 c["created_at"] = str(c["created_at"])
+        if isinstance(c.get("created_at"), datetime):
+            c["created_at"] = c["created_at"].isoformat()
     return complaints
-
 
 @router.get("/recent-users")
 async def get_recent_users(_admin=Depends(require_admin)):
     """Return 10 most recent users."""
-    cursor = db_client.db["users"].find().sort("_id", -1).limit(10)
-    users = await cursor.to_list(length=100)
-    for u in users:
-        u["_id"] = str(u["_id"])
+    async with get_db_ctx() as session:
+        stmt = select(UserDB).order_by(UserDB.created_at.desc()).limit(10)
+        result = await session.execute(stmt)
+        users = [u.to_dict() for u in result.scalars().all()]
     return users
-
 
 @router.get("/users")
 async def list_users(role: Optional[str] = None, _admin=Depends(require_admin)):
     """List all users, optionally filtered by role."""
-    query = {}
-    if role:
-        query["role"] = role
-    cursor = db_client.db["users"].find(query)
-    users = await cursor.to_list(length=500)
-    return [_serialize(u) for u in users]
-
+    async with get_db_ctx() as session:
+        stmt = select(UserDB)
+        if role:
+            stmt = stmt.where(UserDB.role == role)
+        result = await session.execute(stmt)
+        users = [u.to_dict() for u in result.scalars().all()]
+    return users
 
 @router.post("/users", status_code=201)
 async def create_user(body: AdminUserCreate, _admin=Depends(require_admin)):
     """Create a new user directly (no Firebase required for officials)."""
-    existing = await db_client.db["users"].find_one({"email": body.email})
-    if existing:
-        raise HTTPException(status_code=400, detail="A user with this email already exists")
+    async with get_db_ctx() as session:
+        stmt = select(UserDB).where(UserDB.email == body.email)
+        existing = (await session.execute(stmt)).scalar_one_or_none()
+        if existing:
+            raise HTTPException(status_code=400, detail="A user with this email already exists")
 
-    user_dict = body.model_dump(exclude_none=True)
-    # Use email as a synthetic auth0_id for admin-created users
-    user_dict["auth0_id"] = f"admin_created_{body.email}"
-    result = await db_client.db["users"].insert_one(user_dict)
-    created = await db_client.db["users"].find_one({"_id": result.inserted_id})
-    return _serialize(created)
-
+        db_user = UserDB(
+            email=body.email,
+            name=body.name,
+            phone=body.phone,
+            role=body.role.value if hasattr(body.role, "value") else body.role,
+            auth0_id=f"admin_created_{body.email}",
+            # officer
+            department=body.department,
+            city=body.city,
+            employee_id=body.employee_id,
+            # mp_mla
+            constituency=body.constituency,
+            state=body.state,
+            party_name=body.party_name,
+            # ministry
+            ministry_name=body.ministry_name,
+            designation=body.designation,
+            # citizen
+            address=body.address,
+            pincode=body.pincode
+        )
+        session.add(db_user)
+        await session.commit()
+        await session.refresh(db_user)
+        return db_user.to_dict()
 
 @router.delete("/users/{user_id}", status_code=200)
 async def delete_user(user_id: str, _admin=Depends(require_admin)):
-    """Delete a user by MongoDB _id."""
-    try:
-        oid = ObjectId(user_id)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid user ID format")
-
-    result = await db_client.db["users"].delete_one({"_id": oid})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="User not found")
+    """Delete a user by primary key id."""
+    async with get_db_ctx() as session:
+        stmt = select(UserDB).where(UserDB.id == user_id)
+        result = await session.execute(stmt)
+        u = result.scalar_one_or_none()
+        if not u:
+            raise HTTPException(status_code=404, detail="User not found")
+        await session.delete(u)
+        await session.commit()
     return {"message": "User deleted successfully"}

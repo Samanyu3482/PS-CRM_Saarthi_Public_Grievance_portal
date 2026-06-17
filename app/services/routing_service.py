@@ -1,28 +1,29 @@
-from app.db.mongodb import db_client
-from typing import List, Optional, Dict, Any
+from app.db.database import get_db_ctx
+from app.db.models import DepartmentDB, OfficerDB
 from app.schemas.routing import DepartmentSchema, OfficerSchema
+from typing import List, Optional, Dict, Any
+from sqlalchemy import select, update
 
 async def get_departments() -> List[DepartmentSchema]:
-    cursor = db_client.db["departments"].find({})
-    deps = await cursor.to_list(length=100)
-    for d in deps:
-        d["_id"] = str(d["_id"])
-    return [DepartmentSchema(**d) for d in deps]
+    async with get_db_ctx() as session:
+        stmt = select(DepartmentDB)
+        result = await session.execute(stmt)
+        deps = result.scalars().all()
+        return [DepartmentSchema(**d.to_dict()) for d in deps]
 
 async def get_officers(ministry: Optional[str] = None, department: Optional[str] = None, city: Optional[str] = None) -> List[OfficerSchema]:
-    query = {}
-    if ministry:
-        query["ministry"] = ministry
-    if department:
-        query["department"] = department
-    if city:
-        query["city"] = city
-        
-    cursor = db_client.db["officers"].find(query)
-    officers = await cursor.to_list(length=100)
-    for o in officers:
-        o["_id"] = str(o["_id"])
-    return [OfficerSchema(**o) for o in officers]
+    async with get_db_ctx() as session:
+        stmt = select(OfficerDB)
+        if ministry:
+            stmt = stmt.where(OfficerDB.ministry == ministry)
+        if department:
+            stmt = stmt.where(OfficerDB.department == department)
+        if city:
+            stmt = stmt.where(OfficerDB.city == city)
+            
+        result = await session.execute(stmt)
+        officers = result.scalars().all()
+        return [OfficerSchema(**o.to_dict()) for o in officers]
 
 def detect_department(description: str) -> Dict[str, str]:
     """
@@ -54,21 +55,25 @@ async def assign_officer(ministry: str, department: str, city: str) -> Optional[
     """
     Finds the officer with the least workload in the given department and city.
     """
-    # Query matching officers, sorted by workload ascending to instantly grab the one with the smallest workload
-    cursor = db_client.db["officers"].find(
-        {"ministry": ministry, "department": department, "city": city}
-    ).sort("current_workload", 1).limit(1)
-    
-    officers = await cursor.to_list(length=1)
-    if not officers:
-        return None
+    async with get_db_ctx() as session:
+        # Find the officer with the least current_workload
+        stmt = (
+            select(OfficerDB)
+            .where(OfficerDB.ministry == ministry)
+            .where(OfficerDB.department == department)
+            .where(OfficerDB.city == city)
+            .order_by(OfficerDB.current_workload.asc())
+            .limit(1)
+        )
+        result = await session.execute(stmt)
+        officer = result.scalar_one_or_none()
         
-    selected_officer = officers[0]
-    
-    # Increment their workload atomically
-    await db_client.db["officers"].update_one(
-        {"_id": selected_officer["_id"]},
-        {"$inc": {"current_workload": 1}}
-    )
-    
-    return selected_officer
+        if not officer:
+            return None
+            
+        # Update workload atomically
+        officer.current_workload += 1
+        session.add(officer)
+        await session.commit()
+        
+        return officer.to_dict()

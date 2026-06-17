@@ -16,3 +16,6 @@ scikit-learn
 sentence-transformers
 openai
 python-dotenv
+langchain
+langchain-openai
+langgraph

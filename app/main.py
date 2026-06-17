@@ -1,15 +1,44 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.db.mongodb import connect_to_mongo, close_mongo_connection
+from app.db.database import engine, Base
+from app.db.models import UserDB, ComplaintDB, DepartmentDB, OfficerDB, NotificationDB, WhatsAppSessionDB, BlacklistedTokenDB
 from fastapi.staticfiles import StaticFiles
 import pathlib
+import os
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await connect_to_mongo()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    print("PostgreSQL tables initialized successfully!")
+
+    # ── Auto-start ngrok tunnel for WhatsApp webhook ──────
+    ngrok_tunnel = None
+    try:
+        from app.core.config import settings as _s
+        if _s.NGROK_AUTH_TOKEN:
+            from pyngrok import ngrok, conf
+            conf.get_default().auth_token = _s.NGROK_AUTH_TOKEN
+            ngrok_tunnel = ngrok.connect(8000, "http")
+            public_url = ngrok_tunnel.public_url
+            print(f"\n{'='*60}")
+            print(f"  NGROK TUNNEL ACTIVE")
+            print(f"  Public URL : {public_url}")
+            print(f"  Webhook    : {public_url}/whatsapp/webhook")
+            print(f"  -> Paste this webhook URL in Meta Developer Dashboard")
+            print(f"{'='*60}\n")
+    except Exception as e:
+        print(f"Ngrok tunnel failed (non-fatal): {e}")
+
     yield
-    await close_mongo_connection()
+
+    # Cleanup
+    if ngrok_tunnel:
+        from pyngrok import ngrok
+        ngrok.disconnect(ngrok_tunnel.public_url)
+    await engine.dispose()
+    print("PostgreSQL connection pool disposed.")
 
 app = FastAPI(
     title="Smart Public Service CRM",
@@ -44,6 +73,8 @@ app.include_router(analytics_routes.router)
 from app.api.routes.uploads import router as uploads_router
 app.include_router(uploads_router)
 app.include_router(notifications.router)
+from app.api.routes.whatsapp import router as whatsapp_router
+app.include_router(whatsapp_router)
 
 # serve uploaded files
 basedir = pathlib.Path(__file__).resolve().parents[1]

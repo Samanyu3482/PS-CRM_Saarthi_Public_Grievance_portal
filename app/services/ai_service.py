@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
-_model = SentenceTransformer('all-MiniLM-L6-v2')
+_model = None
 
 COSINE_THRESHOLD = 0.8
 DISTANCE_THRESHOLD_M = 20
@@ -62,6 +62,21 @@ def check_spam(title: str, description: str) -> dict:
 
 def get_embedding(text: str) -> np.ndarray:
     """Return a 384-dim embedding vector for the given text."""
+    global _model
+    if _model is None:
+        try:
+            _model = SentenceTransformer('all-MiniLM-L6-v2')
+        except Exception as e:
+            logging.error(f"Failed to load SentenceTransformer: {e}. Using mock embedding fallback.")
+            class DummyModel:
+                def encode(self, t: str) -> np.ndarray:
+                    import hashlib
+                    h = hashlib.sha256(t.encode('utf-8')).digest()
+                    arr = np.frombuffer(h, dtype=np.uint8)
+                    padded = np.zeros(384)
+                    padded[:len(arr)] = arr / 255.0
+                    return padded
+            _model = DummyModel()
     return _model.encode(text)
 
 

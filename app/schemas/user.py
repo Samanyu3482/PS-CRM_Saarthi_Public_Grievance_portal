@@ -9,6 +9,7 @@ class RoleEnum(str, Enum):
     mp_mla = "mp_mla"
     mc = "mc"
     admin = "admin"
+    delhi_cm = "delhi_cm"
 
 class UserBase(BaseModel):
     firebase_uid: Optional[str] = None
@@ -47,8 +48,13 @@ class McMember(UserBase):
     city: str
     employee_id: str
 
+class DelhiCM(UserBase):
+    role: Literal[RoleEnum.delhi_cm]
+    employee_id: str
+    state: str = "Delhi"
+
 # Polymorphic validation schema based on 'role'
-UserCreate = Annotated[Union[Citizen, Officer, Ministry, MpMla, McMember], Field(discriminator="role")]
+UserCreate = Annotated[Union[Citizen, Officer, Ministry, MpMla, McMember, DelhiCM], Field(discriminator="role")]
 
 class UserSignupRequest(BaseModel):
     user_data: UserCreate

@@ -1,3 +1,4 @@
+import jwt
 import httpx
 from fastapi import HTTPException, Security, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -5,7 +6,41 @@ from app.core.config import settings
 
 security = HTTPBearer(auto_error=False)
 
+# ── Internal JWT for WhatsApp / service-to-service calls ────
+_INTERNAL_SECRET = "pscrm-internal-whatsapp-service-key"
+_INTERNAL_ALGORITHM = "HS256"
+
+
+def create_internal_token(sub: str) -> str:
+    """
+    Create a lightweight internal JWT for WhatsApp users.
+    These tokens are only used server-side by the agent's tool HTTP calls.
+    """
+    return jwt.encode(
+        {"sub": sub, "_internal": True},
+        _INTERNAL_SECRET,
+        algorithm=_INTERNAL_ALGORITHM,
+    )
+
+
+def _decode_internal_token(token: str) -> dict | None:
+    """Try to decode as an internal JWT. Returns payload or None."""
+    try:
+        payload = jwt.decode(token, _INTERNAL_SECRET, algorithms=[_INTERNAL_ALGORITHM])
+        if payload.get("_internal"):
+            return {"sub": payload["sub"], "_raw_token": token}
+    except (jwt.InvalidTokenError, Exception):
+        pass
+    return None
+
+
 async def decode_firebase_token(token: str) -> dict:
+    # ── Try internal token first (WhatsApp users) ─────────
+    internal = _decode_internal_token(token)
+    if internal:
+        return internal
+
+    # ── Firebase verification ─────────────────────────────
     try:
         verification_url = f"https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={settings.FIREBASE_API_KEY}"
         async with httpx.AsyncClient() as client:
