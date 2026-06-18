@@ -106,7 +106,7 @@ async def get_my_profile(current_user: UserInDB = Depends(get_current_user)):
     return current_user
 
 @router.post("/login", response_model=UserInDB)
-async def login(body: LoginRequest, response: Response):
+async def login(request: Request, body: LoginRequest, response: Response):
     """
     Unified login endpoint that verifies credentials with Firebase
     and sets a session cookie.
@@ -140,12 +140,14 @@ async def login(body: LoginRequest, response: Response):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found in system")
     
     # 3. Set session cookie
+    origin = request.headers.get("origin", "")
+    is_prod_origin = origin and "localhost" not in origin and "127.0.0.1" not in origin
     response.set_cookie(
         key="access_token",
         value=uid,
         httponly=True,
-        secure=False,
-        samesite="lax",
+        secure=True if is_prod_origin else False,
+        samesite="none" if is_prod_origin else "lax",
         max_age=3600,
         path="/",
     )
@@ -156,18 +158,20 @@ async def login(body: LoginRequest, response: Response):
 
 
 @router.post("/dev-login", response_model=UserInDB)
-async def dev_login(body: DevLogin, response: Response):
+async def dev_login(request: Request, body: DevLogin, response: Response):
     """Development-only login: lookup user by email and set a simple dev session cookie containing auth0_id."""
     user = await user_service.get_user_by_email(body.email)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
+    origin = request.headers.get("origin", "")
+    is_prod_origin = origin and "localhost" not in origin and "127.0.0.1" not in origin
     response.set_cookie(
         key="access_token",
         value=user.firebase_uid or user.id,
         httponly=True,
-        secure=False,
-        samesite="lax",
+        secure=True if is_prod_origin else False,
+        samesite="none" if is_prod_origin else "lax",
         max_age=3600,
         path="/",
     )
@@ -188,7 +192,7 @@ async def logout(request: Request, response: Response):
 
 
 @router.post("/firebase-login", response_model=UserInDB)
-async def firebase_login(body: FirebaseLogin, response: Response):
+async def firebase_login(request: Request, body: FirebaseLogin, response: Response):
     """
     Backend Firebase authentication endpoint.
     Verifies Firebase ID token and sets session cookie if user exists in MongoDB.
@@ -231,12 +235,14 @@ async def firebase_login(body: FirebaseLogin, response: Response):
             )
         
         # Set HttpOnly cookie with Firebase UID
+        origin = request.headers.get("origin", "")
+        is_prod_origin = origin and "localhost" not in origin and "127.0.0.1" not in origin
         response.set_cookie(
             key="access_token",
             value=uid,
             httponly=True,
-            secure=False,
-            samesite="lax",
+            secure=True if is_prod_origin else False,
+            samesite="none" if is_prod_origin else "lax",
             max_age=3600,
             path="/",
         )
@@ -251,7 +257,7 @@ class OfficialLogin(BaseModel):
     password: str # In real app, verify against hash. For now, simple check.
 
 @router.post("/official-login", response_model=UserInDB)
-async def official_login(body: OfficialLogin, response: Response):
+async def official_login(request: Request, body: OfficialLogin, response: Response):
     """
     Login endpoint for government officials (Officer, Ministry, MP/MLA).
     Verifies bcrypt password hash if present; otherwise allows login (dev/legacy mode).
@@ -291,12 +297,14 @@ async def official_login(body: OfficialLogin, response: Response):
     raw_user.setdefault("name", "Official")
     raw_user.setdefault("phone", "")
     
+    origin = request.headers.get("origin", "")
+    is_prod_origin = origin and "localhost" not in origin and "127.0.0.1" not in origin
     response.set_cookie(
         key="access_token",
         value=raw_user["firebase_uid"],
         httponly=True,
-        secure=False,
-        samesite="lax",
+        secure=True if is_prod_origin else False,
+        samesite="none" if is_prod_origin else "lax",
         max_age=3600,
         path="/",
     )
