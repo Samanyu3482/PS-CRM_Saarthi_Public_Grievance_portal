@@ -12,8 +12,8 @@ faker
 python-multipart
 firebase-admin
 numpy
-scikit-learn
-sentence-transformers
+fastembed
 openai
 python-dotenv
 qrcode[pil]
+google-generativeai

@@ -3,10 +3,20 @@ import math
 import re
 import numpy as np
 from datetime import datetime, timezone
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
+from fastembed import TextEmbedding
 
-_model = SentenceTransformer('all-MiniLM-L6-v2')
+_model = None
+
+def _get_model():
+    global _model
+    if _model is None:
+        _model = TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2", threads=1)
+    return _model
+
+def cosine_similarity_1d(a: np.ndarray, b: np.ndarray) -> float:
+    """Calculate cosine similarity between two 1D numpy arrays."""
+    denom = (np.linalg.norm(a) * np.linalg.norm(b))
+    return 0.0 if denom == 0 else float(np.dot(a, b) / denom)
 
 COSINE_THRESHOLD = 0.8
 DISTANCE_THRESHOLD_M = 20
@@ -62,8 +72,9 @@ def check_spam(title: str, description: str) -> dict:
 
 def get_embedding(text: str) -> np.ndarray:
     """Return a 384-dim embedding vector for the given text."""
-    return _model.encode(text)
-
+    # TextEmbedding.embed returns an iterable of numpy arrays
+    model = _get_model()
+    return list(model.embed([text]))[0]
 
 def haversine_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     R = 6_371_000
@@ -86,17 +97,17 @@ async def check_duplicate_complaint(
         return {"is_duplicate": False, "duplicate_of": None}
 
     try:
-        new_emb = np.array(new_embedding).reshape(1, -1)  # ✅ no re-encoding
+        new_emb = np.array(new_embedding).flatten()  # ✅ flatten to 1D array
 
         for comp in existing_complaints:
             # --- 1. Cosine similarity ---
             stored_emb = comp.get("embedding")
             if stored_emb is not None:
-                comp_emb = np.array(stored_emb).reshape(1, -1)
+                comp_emb = np.array(stored_emb).flatten()
             else:
-                comp_emb = get_embedding(comp.get("description", "")).reshape(1, -1)
+                comp_emb = get_embedding(comp.get("description", "")).flatten()
 
-            sim = cosine_similarity(new_emb, comp_emb)[0][0]
+            sim = cosine_similarity_1d(new_emb, comp_emb)
             if sim < COSINE_THRESHOLD:
                 continue
 

@@ -4,4 +4,4 @@ services:
     env: python
     region: singapore # Optional: adjust based on preference
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
