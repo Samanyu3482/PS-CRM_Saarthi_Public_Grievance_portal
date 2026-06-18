@@ -1,21 +1,40 @@
+# ── Web Framework ─────────────────────────────────────────────
 fastapi
-uvicorn
-motor
-certifi
-dnspython
-pydantic[email]
-pydantic-settings
+uvicorn[standard]
+python-multipart
+
+# ── Database (PostgreSQL + async) ─────────────────────────────
+sqlalchemy[asyncio]
+asyncpg
+
+# ── Auth & Security ───────────────────────────────────────────
 pyjwt
 cryptography
-httpx
-faker
-python-multipart
+bcrypt
 firebase-admin
+
+# ── Validation & Config ───────────────────────────────────────
+pydantic[email]
+pydantic-settings
+python-dotenv
+
+# ── HTTP Client ───────────────────────────────────────────────
+httpx
+certifi
+
+# ── AI / ML ───────────────────────────────────────────────────
+openai
+langchain
+langchain-openai
+langchain-google-genai
+langgraph
+google-generativeai
 numpy
 scikit-learn
 sentence-transformers
-openai
-python-dotenv
-langchain
-langchain-openai
-langgraph
+
+# ── WhatsApp / Ngrok (optional) ───────────────────────────────
+pyngrok
+
+# ── Dev / Seeding ─────────────────────────────────────────────
+faker

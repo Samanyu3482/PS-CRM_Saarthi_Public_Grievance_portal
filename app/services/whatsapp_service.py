@@ -244,17 +244,10 @@ async def process_message(phone: str, text: str) -> None:
         await send_whatsapp_message(phone, reply_text)
 
     except Exception as e:
-        import traceback
-        # Write full error to file for debugging
-        with open("wa_error.log", "w") as f:
-            f.write(f"Error for {phone}: {type(e).__name__}: {e}\n\n")
-            traceback.print_exc(file=f)
-        print(f"[WA ERROR] Processing failed for {phone}: {type(e).__name__}: {e}")
-        traceback.print_exc()
         logger.error("WhatsApp processing error for %s: %s", phone, e, exc_info=True)
         await send_whatsapp_message(
             phone,
-            "⚠️ Sorry, We are currently down for the maintainece. Please try again in a moment.",
+            "⚠️ Sorry, we're temporarily unavailable. Please try again in a moment.",
         )
 
 

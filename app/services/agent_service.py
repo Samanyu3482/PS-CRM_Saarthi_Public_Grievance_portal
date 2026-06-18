@@ -345,13 +345,12 @@ def run_agent(
     return response_text, updated_history
 
 
-# ─── Pretty printer ─────────────────────────────────────────────────────────────
-
-def print_response(user_msg: str, agent_response: str):
-    print("\n" + "─" * 60)
-    print(f"  YOU   : {user_msg}")
-    print(f"  AGENT : {agent_response}")
-    print("─" * 60)
+def _log_exchange(user_msg: str, agent_response: str) -> None:
+    """Log an agent exchange at DEBUG level (suppressed in production log level)."""
+    import logging
+    logging.getLogger(__name__).debug(
+        "Agent exchange | user=%r | agent=%r", user_msg[:120], agent_response[:120]
+    )
 
 
 # ─── Main (testing) ─────────────────────────────────────────────────────────────

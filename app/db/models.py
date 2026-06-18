@@ -32,8 +32,7 @@ class UserDB(Base):
 
     def to_dict(self):
         d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
-        # Map Postgres "id" to MongoDB "_id" compatibility field
-        d["_id"] = self.id
+        d["_id"] = self.id  # alias for schema compatibility
         if isinstance(d.get("created_at"), datetime):
             d["created_at"] = d["created_at"].isoformat()
         return d
