@@ -15,5 +15,5 @@ numpy
 fastembed
 openai
 python-dotenv
-qrcode[pil]
+qrcode
 google-generativeai
