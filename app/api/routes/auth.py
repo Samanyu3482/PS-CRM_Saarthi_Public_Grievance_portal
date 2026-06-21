@@ -283,7 +283,9 @@ async def official_login(request: Request, body: OfficialLogin, response: Respon
     stored_hash = raw_user.get("password_hash")
     if stored_hash:
         import bcrypt
-        if not bcrypt.checkpw(body.password.encode(), stored_hash.encode()):
+        # Handle cases where password_hash is stored as string or binary (bytes) in MongoDB
+        hash_bytes = stored_hash.encode("utf-8") if isinstance(stored_hash, str) else stored_hash
+        if not bcrypt.checkpw(body.password.encode(), hash_bytes):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid password"

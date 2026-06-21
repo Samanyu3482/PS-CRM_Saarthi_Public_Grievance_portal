@@ -159,6 +159,26 @@ async def get_ministry_dashboard(ministry_name: str) -> Dict[str, Any]:
                     "created_at": 1,
                 }},
             ],
+            # ── Department performance ──
+            "department_performance": [
+                {"$group": {
+                    "_id": "$department",
+                    "total": {"$sum": 1},
+                    "resolved": {"$sum": {"$cond": [{"$in": ["$status", ["resolved", "closed"]]}, 1, 0]}}
+                }},
+                {"$sort": {"total": -1}}
+            ],
+            # ── Crisis alerts ──
+            "crisis_alerts": [
+                {"$match": {"priority": "critical", "status": {"$nin": ["resolved", "closed"]}}},
+                {"$sort": {"created_at": -1}},
+                {"$limit": 5},
+                {"$project": {
+                    "title": 1, "status": 1, "priority": 1,
+                    "category": 1, "location.city": 1,
+                    "created_at": 1,
+                }}
+            ],
         }},
     ]
 
@@ -188,6 +208,18 @@ async def get_ministry_dashboard(ministry_name: str) -> Dict[str, Any]:
         for item in data.get("by_city", [])
     ]
 
+    # Format department performance
+    dept_performance = [
+        {"dept": item["_id"] or "Unassigned", "total": item["total"], "resolved": item["resolved"]}
+        for item in data.get("department_performance", [])
+    ]
+
+    # Format crisis alerts
+    crisis_alerts = []
+    for c in data.get("crisis_alerts", []):
+        c["_id"] = str(c["_id"])
+        crisis_alerts.append(c)
+
     return {
         "ministry_name": ministry_name,
         "total_complaints": total,
@@ -208,4 +240,6 @@ async def get_ministry_dashboard(ministry_name: str) -> Dict[str, Any]:
         "top_categories": top_categories,
         "by_city": by_city,
         "recent_complaints": recent,
+        "department_performance": dept_performance,
+        "crisis_alerts": crisis_alerts,
     }
